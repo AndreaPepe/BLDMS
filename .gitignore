@@ -10,3 +10,4 @@
 *.symvers
 *.cmd
 *.swp
+*.order
