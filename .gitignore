@@ -11,3 +11,5 @@
 *.cmd
 *.swp
 *.order
+*.mod
+*.mod*
