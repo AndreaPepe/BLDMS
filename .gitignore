@@ -13,3 +13,6 @@
 *.order
 *.mod
 *.mod*
+
+#backup files
+*~
