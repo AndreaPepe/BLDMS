@@ -1,5 +1,12 @@
+# editor configuration stuff
 .idea*
 .idea/*
 
-.o
-.ko
+# compilation output
+*.o
+*.o*
+*.ko
+*.ko*
+*.symvers
+*.cmd
+*.swp
