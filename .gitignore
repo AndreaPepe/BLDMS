@@ -3,6 +3,7 @@
 .idea/*
 .vscode*
 .vscode/*
+cmake-build-debug
 
 # compilation output
 *.o
