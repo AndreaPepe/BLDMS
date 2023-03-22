@@ -1,5 +1,5 @@
 obj-m += the_bldms.o
-the_bldms-objs += bldms.o file_ops.o dir_ops.o
+the_bldms-objs += bldms.o bldms_fs.o file_ops.o dir_ops.o
 
 DEVICE_TYPE := "bldms"
 BLOCK_SIZE := 4096

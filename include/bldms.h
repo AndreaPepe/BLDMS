@@ -5,6 +5,9 @@
 #include <linux/fs.h>
 
 #define MOD_NAME "BLDMS"
+#define BLDMS_MAJOR 3030
+#define BDEV_NAME "bldmsdev"
+
 #define MAGIC 0x30303030
 #define DEFAULT_BLOCK_SIZE 4096
 #define SB_BLOCK_NUMBER 0
