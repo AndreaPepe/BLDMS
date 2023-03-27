@@ -3,6 +3,7 @@
 #define __BLDMS_H_
 
 #include <linux/fs.h>
+#include <linux/types.h>
 
 #define MOD_NAME "BLDMS"
 #define BLDMS_MAJOR 3030
@@ -13,6 +14,11 @@
 #define SB_BLOCK_NUMBER 0
 #define FILENAME_MAX_LEN 255
 #define ROOT_INODE_NUMBER 2
+
+#define BLK_VALID 0
+#define BLK_INVALID (BLK_VALID + 1)
+#define BLK_FREE 0
+#define BLK_NOT_FREE (BLK_FREE + 1)
 
 
 //inode definition
@@ -44,6 +50,14 @@ struct bldms_sb_info {
     //padding to fit into a single block
     char padding[ DEFAULT_BLOCK_SIZE - (5 * sizeof(uint64_t))];
 };
+
+// device's block definition
+typedef struct bldms_block{
+    unsigned char is_free;
+    unsigned char valid;
+    spinlock_t lock;
+    char msg[ DEFAULT_BLOCK_SIZE - 2*sizeof(unsigned char) - sizeof(spinlock_t)];
+}bldms_block;
 
 
 // file.c
