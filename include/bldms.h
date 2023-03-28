@@ -20,6 +20,9 @@
 #define BLK_FREE 0
 #define BLK_NOT_FREE (BLK_FREE + 1)
 
+#define UNIQUE_FILE_NAME "the_file"
+#define BLDMS_INODES_BLOCK_NUMBER 1
+
 
 //inode definition
 struct bldms_inode {

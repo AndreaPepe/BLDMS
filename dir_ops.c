@@ -10,8 +10,42 @@
 
 #include "include/bldms.h"
 
-//add the iterate function in the dir operations
+/*
+ * this function handles only the index of one out of 3 possible outcomes:
+ * - 0: the directory "."
+ * - 1: the directory ".."
+ * - 2: the single file of the filesytem
+ */
+static int bldms_iterate(struct file *file, struct dir_context *ctx){
+	if (ctx->pos >= (2 + 1)){
+		return 0;
+	}
+
+	if (ctx->pos == 0){
+		if (!dir_emit(ctx, ".", FILENAME_MAX_LEN, ROOT_INODE_NUMBER, DT_UNKNOWN)){
+			return 0;
+		}else{
+			ctx->pos++;
+		}
+	}else if (ctx->pos == 1){
+		if(!dir_emit(ctx,"..", FILENAME_MAX_LEN, ROOT_INODE_NUMBER, DT_UNKNOWN)){
+			return 0;
+		}
+		else{
+			ctx->pos++;
+		}
+	}else{
+		if(!dir_emit(ctx, UNIQUE_FILE_NAME, FILENAME_MAX_LEN, ROOT_INODE_NUMBER, DT_UNKNOWN)){
+			return 0;
+		}
+		else{
+			ctx->pos++;
+		}
+	}
+	return 0;
+}
+
 const struct file_operations bldms_dir_operations = {
-        .owner = THIS_MODULE,
-        //.iterate = onefilefs_iterate,
+	.owner = THIS_MODULE,
+	.iterate = bldms_iterate,
 };
