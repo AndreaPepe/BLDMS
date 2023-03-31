@@ -52,6 +52,8 @@ int bldms_fs_fill_super(struct super_block *sb, void *data){
         return -ENOMEM;
     }
 
+    i_size_read(root_inode);
+
     root_inode->i_ino = ROOT_INODE_NUMBER;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
     inode_init_owner(NULL, root_inode, NULL, S_IFDIR);
@@ -80,7 +82,7 @@ int bldms_fs_fill_super(struct super_block *sb, void *data){
     if (!sb->s_root){
         return -ENOMEM;
     }
-
+    
     // setup dentry operations
     sb->s_root->d_op = &bldms_dir_operations;
 
