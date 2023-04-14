@@ -21,7 +21,7 @@ ssize_t bldms_read(struct file *filp, char __user *buf, size_t len, loff_t *off)
 	loff_t offset;
 	int block_to_read;
 
-	printk("%s: read operation called with len %ld - and offset %lld (file size is %ld)", MOD_NAME, len, *off, file_sz);
+	printk("%s: read operation called with len %ld - and offset %lld (file size is %lld)", MOD_NAME, len, *off, file_sz);
 
 	/*
 	 * this operation is not synchronized
@@ -58,6 +58,7 @@ ssize_t bldms_read(struct file *filp, char __user *buf, size_t len, loff_t *off)
 	ret = copy_to_user(buf, bh->b_data + offset, len);
 	*off = len - ret;
 	brelse(bh);
+	
 
 	// return the number of residuals bytes 
 	return len - ret;
@@ -107,7 +108,7 @@ struct dentry *bldms_lookup(struct inode *parent_inode, struct dentry *child_den
 			return ERR_PTR(-EIO);
 		}
 
-		fs_specific_inode = bh->b_data;
+		fs_specific_inode = (struct bldms_inode *) bh->b_data;
 		var_inode->i_size = bh->b_size;
 		brelse(bh);
 

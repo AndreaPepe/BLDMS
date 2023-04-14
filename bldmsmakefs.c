@@ -2,7 +2,8 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
-
+#include <sys/stat.h>
+#include <stdint.h>
 #include "include/bldms.h"
 
 /**
@@ -20,6 +21,11 @@ int main(int argc, char **argv){
     struct bldms_inode file_inode;
     struct bldms_dir_record dir_record;
     char *block_padding;
+    struct stat st;
+    off_t size;
+    uint num_data_blocks;
+    uint32_t i;
+    // bldms_block tmp_metadata;
 
     if (argc != 2){
         printf("Usage: %s <device>\n", argv[0]);
@@ -32,11 +38,12 @@ int main(int argc, char **argv){
         return -1;
     }
 
+    fstat(fd, &st);
+    size = st.st_size;
+
     // pack the superblock
     sb_info.version = 1;
     sb_info.magic = MAGIC;
-    sb_info.block_size = DEFAULT_BLOCK_SIZE;
-    sb_info.block_count = NBLOCKS;
 
     // write on the device
     ret = write(fd, (char *)&sb_info, sizeof(sb_info));
@@ -51,8 +58,8 @@ int main(int argc, char **argv){
     // write single file inode
     file_inode.mode = S_IFREG;
     file_inode.inode_no = BLDMS_SINGLEFILE_INODE_NUMBER;
-    // empty file at the beginning
-    file_inode.file_size = 0;
+    // device size is the size of the image file minus the size of the superblock and of the device file inode block
+    file_inode.file_size = size - (2 * DEFAULT_BLOCK_SIZE);
 
     // write the inode on the device
     ret = write(fd, (char *)&file_inode, sizeof(file_inode));
@@ -74,9 +81,55 @@ int main(int argc, char **argv){
         return -1;
     }
     printf("Padding for the block containing the file inode succesfully written.\n");
-       
-    // all other blocks are reserved for user datablocks
 
+
+    // all other blocks are reserved for user datablocks but the metadata needs to be written
+
+    /*
+    * Init metadata of blocks:
+    * - ndx: 32 bits set to the value of the block in the device
+    * - valid_bytes: 32 bits initialized to zero
+    * - ts: timestamp struct values for a total of 128 bits initialized to zero
+    * - is_valid: 1 byte, initialized to 0 (not valid) for each block
+    * */
+    num_data_blocks = file_inode.file_size / DEFAULT_BLOCK_SIZE;
+    // tmp_metadata.is_valid = BLK_INVALID;
+    // tmp_metadata.ts.tv_nsec = 0;
+    // tmp_metadata.ts.tv_sec = 0;
+    nbytes = DEFAULT_BLOCK_SIZE - 4 - 4 -16 -1;
+
+    // initialized to zero, also used for zero values other than padding
+    block_padding = calloc(nbytes, 1);
+
+    for (i=0; i<num_data_blocks; i++){
+        // tmp_metadata.ndx = i;
+
+        // write ndx
+        ret = write(fd, &i, sizeof(uint32_t));
+        if (ret != sizeof(i)){
+            printf("Error writing device block's metadata (index)\n");
+            close(fd);
+            return -1;
+        }
+
+        // write valid_bytes + timestamp + is_valid
+        ret = write(fd, block_padding, sizeof(uint32_t) + 2*sizeof(uint64_t) + sizeof(unsigned char));
+        if (ret != sizeof(uint32_t) + 2*sizeof(uint64_t) + sizeof(unsigned char)){
+            printf("Error writing device block's metadata (fields set to 0)\n");
+            close(fd);
+            return -1;
+        }
+
+        // write block data: it is initialized to 0
+        ret = write(fd, block_padding, nbytes);
+        if(ret != nbytes){
+            printf("Error initializing device block content\n");
+            close(fd);
+            return -1;
+        }
+    }
+
+    printf("File system formatted correctly\n");
     close(fd);
     return 0;
 }

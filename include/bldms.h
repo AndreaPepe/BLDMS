@@ -4,12 +4,9 @@
 
 #include <linux/fs.h>
 #include <linux/types.h>
-#include <stdint.h>
-
 
 #define MOD_NAME "BLDMS"
-#define BLDMS_MAJOR 3030
-#define BDEV_NAME "bldmsdev"
+#define BLDMS_FS_NAME "bldms_fs"
 
 #define MAGIC 0x30303030
 #define DEFAULT_BLOCK_SIZE 4096
@@ -22,10 +19,10 @@
 #define FILENAME_MAX_LEN 255
 #define ROOT_INODE_NUMBER 2
 
-#define BLK_VALID 0
-#define BLK_INVALID (BLK_VALID + 1)
-#define BLK_FREE 0
-#define BLK_NOT_FREE (BLK_FREE + 1)
+#define BLK_INVALID (0)
+#define BLK_VALID (BLK_INVALID + 1)
+#define BLK_FREE BLK_VALID
+#define BLK_NOT_FREE BLK_INVALID
 
 #define UNIQUE_FILE_NAME "the_file"
 #define BLDMS_INODES_BLOCK_NUMBER 1
@@ -54,22 +51,10 @@ struct bldms_dir_record {
 struct bldms_sb_info {
     uint64_t version;
     uint64_t magic;
-    uint64_t block_size;
-    uint64_t block_count;
-    uint64_t inodes_count;
-    uint64_t free_blocks;
 
     //padding to fit into a single block
-    char padding[ DEFAULT_BLOCK_SIZE - (6 * sizeof(uint64_t))];
+    char padding[ DEFAULT_BLOCK_SIZE - (2 * sizeof(uint64_t))];
 };
-
-// device's block definition
-typedef struct bldms_block{
-    unsigned char is_free;
-    unsigned char is_valid;
-    //struct mutex lock;
-    char msg[ DEFAULT_BLOCK_SIZE - 2*sizeof(unsigned char)];
-}bldms_block;
 
 
 // file.c

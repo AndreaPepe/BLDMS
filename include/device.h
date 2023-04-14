@@ -1,21 +1,16 @@
 #pragma once
-#ifndef __BLDMS_DEV_H__
-#define __BLDMS_DEV_H__
+#ifndef __BLDMS_DEVICE_H__
+#define __BLDMS_DEVICE_H__
 
-#include <linux/version.h>
-#include <include/bldms.h>
+#include <linux/ktime.h>
+#include <linux/types.h>
 
-#define EXPORT_SYMTAB
-#define DEVICE_NAME "bldms-dev"
-#define MINORS 8
-#define OBJECT_MAX_SIZE (4096)
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)
-#define get_major(session)	MAJOR(session->f_inode->i_rdev)
-#define get_minor(session)	MINOR(session->f_inode->i_rdev)
-#else
-#define get_major(session)	MAJOR(session->f_dentry->d_inode->i_rdev)
-#define get_minor(session)	MINOR(session->f_dentry->d_inode->i_rdev)
-#endif
+// device's block metadata
+typedef struct bldms_block{
+    uint32_t ndx;                   // 32 bit
+    uint32_t valid_bytes;           // 32 bit
+    struct timespec64 ts;           // 128 bit   
+    unsigned char is_valid;         // 8 bit    
+}bldms_block;
 
 #endif
