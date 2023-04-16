@@ -28,7 +28,7 @@
 #define BLDMS_INODES_BLOCK_NUMBER 1
 #define BLDMS_SINGLEFILE_INODE_NUMBER 1
 
-
+extern unsigned char bldms_mounted;
 //inode definition
 struct bldms_inode {
     mode_t mode;                                    //not exploited

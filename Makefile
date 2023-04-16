@@ -4,10 +4,10 @@ the_bldms-objs += bldms.o file_ops.o dir_ops.o rcu.o
 DEVICE_TYPE := "bldms_fs"
 BLOCK_SIZE := 4096
 NBLOCKS := 1000
-NR_BLOCKS_FORMAT := 100
+NR_BLOCKS_FORMAT := 102
 
 all:
-	gcc bldmsmakefs.c -o bldmsmakefs
+	gcc bldmsmakefs.c -lrt -o bldmsmakefs
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
 
 clean:
@@ -22,3 +22,12 @@ create-fs:
 
 mount-fs:
 	mount -o loop -t $(DEVICE_TYPE) image ./mount/
+
+umount-fs:
+	umount ./mount
+
+insmod:
+	insmod the_bldms.ko
+
+rmmod:
+	rmmod the_bldms

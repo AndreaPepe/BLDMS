@@ -20,19 +20,27 @@
 #include "include/rcu.h"
 #include <linux/slab.h>
 
+
+LIST_HEAD(valid_blk_list);
+spinlock_t rcu_write_lock;
+
+
+
 /**
  * @brief  Adds a node representing a valid block to a RCU list of valid blocks 
  * @param  metadata: pointer to a block metadata structure
  * @retval less than 0 if error, 0 if ok
  */
-int add_valid_block(bldms_block *metadata){
+int add_valid_block(uint32_t ndx, uint32_t valid_bytes, ktime_t nsec){
     rcu_elem *el;
     el = kzalloc(sizeof(rcu_elem), GFP_KERNEL);
     if (!el)
         return -ENOMEM;
 
-    el->ndx = metadata->ndx;
-    el->valid_bytes = metadata->valid_bytes;
+    // FIXME: the lock should be taken before the ndx is passed, otherwise writes can overwrite each other !!!
+    el->ndx = ndx;
+    el->valid_bytes = valid_bytes;
+    el->nsec = nsec;
 
     spin_lock(&rcu_write_lock);
     list_add_tail_rcu(&el->node, &valid_blk_list);
@@ -62,4 +70,8 @@ int remove_valid_block(uint32_t ndx){
 
     spin_unlock(&rcu_write_lock);
     return -ENODATA;
+}
+
+inline void rcu_init(void){
+    spin_lock_init(&rcu_write_lock);
 }

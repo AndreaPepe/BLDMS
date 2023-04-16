@@ -4,6 +4,9 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <stdint.h>
+#include <string.h>
+#include <time.h>
+
 #include "include/bldms.h"
 
 /**
@@ -89,19 +92,22 @@ int main(int argc, char **argv){
     * Init metadata of blocks:
     * - ndx: 32 bits set to the value of the block in the device
     * - valid_bytes: 32 bits initialized to zero
-    * - ts: timestamp struct values for a total of 128 bits initialized to zero
+    * - nsec: 64 bits (s64) timestamp value initialized to zero
     * - is_valid: 1 byte, initialized to 0 (not valid) for each block
     * */
     num_data_blocks = file_inode.file_size / DEFAULT_BLOCK_SIZE;
     // tmp_metadata.is_valid = BLK_INVALID;
     // tmp_metadata.ts.tv_nsec = 0;
     // tmp_metadata.ts.tv_sec = 0;
-    nbytes = DEFAULT_BLOCK_SIZE - 4 - 4 -16 -1;
+    nbytes = DEFAULT_BLOCK_SIZE - sizeof(uint32_t) - sizeof(uint32_t) - sizeof(long) -sizeof(unsigned char);
 
     // initialized to zero, also used for zero values other than padding
     block_padding = calloc(nbytes, 1);
-
+    char *string5 = "This is test string number 5\n";
+    char *string9 = "This is test string number 9!\n";
+    char *string22 = "This is test string number 22 :)\n";
     for (i=0; i<num_data_blocks; i++){
+        //printf("Writing block - %d\n\n", i);
         // tmp_metadata.ndx = i;
 
         // write ndx
@@ -112,9 +118,68 @@ int main(int argc, char **argv){
             return -1;
         }
 
+        if (i == 5 || i==9 || i ==22){
+            char *s;
+            switch(i){
+                case 5:
+                    s = string5; break;
+                case 9:
+                    s = string9; break;
+                case 22:
+                    s = string22; break;
+            }
+
+            uint32_t valid_bytes = strlen(s) + 1;       //take into account also the string terminator character
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            // tv_nsec are the expired nsec in the second specified by tv_sec: bring all to nsec count
+            signed long long nsec = ts.tv_sec*1000 + ts.tv_nsec;
+            unsigned char is_valid = BLK_VALID;
+
+            // write valid_bytes
+            ret = write(fd, &valid_bytes, sizeof(uint32_t));
+            if (ret != sizeof(uint32_t)){
+                printf("Error writing device block's metadata (valid bytes)\n");
+                close(fd);
+                return -1;
+            }
+
+            // write timestamp
+            ret = write(fd, &nsec, sizeof(long));
+            if (ret != sizeof(long)){
+                printf("Error writing device block's metadata (nsec)\n");
+                close(fd);
+                return -1;
+            }
+
+            // write validity byte
+            ret = write(fd, &is_valid, sizeof(unsigned char));
+            if (ret != sizeof(unsigned char)){
+                printf("Error writing device block's metadata (is_valid)\n");
+                close(fd);
+                return -1;
+            }
+
+            // write msg content
+            ret = write(fd, s, valid_bytes);
+            if (ret != valid_bytes){
+                printf("Error writing device block's metadata (valid bytes)\n");
+                close(fd);
+                return -1;
+            }
+
+            // write block padding: it is initialized to 0
+            ret = write(fd, block_padding, nbytes - valid_bytes);
+            if(ret != nbytes - valid_bytes){
+                printf("Error initializing device block content: ret is %ld, should have been %d\n", ret, nbytes - valid_bytes);
+                close(fd);
+                return -1;
+            }
+            continue;
+        }
         // write valid_bytes + timestamp + is_valid
-        ret = write(fd, block_padding, sizeof(uint32_t) + 2*sizeof(uint64_t) + sizeof(unsigned char));
-        if (ret != sizeof(uint32_t) + 2*sizeof(uint64_t) + sizeof(unsigned char)){
+        ret = write(fd, block_padding, sizeof(uint32_t) + sizeof(long) + sizeof(unsigned char));
+        if (ret != sizeof(uint32_t) + sizeof(long) + sizeof(unsigned char)){
             printf("Error writing device block's metadata (fields set to 0)\n");
             close(fd);
             return -1;
