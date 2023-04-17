@@ -17,6 +17,8 @@
  *  - BLOCK 2, ..., N, inodes and datablocks for th messages.
 */
 
+#define BILLION 1000000000L
+
 int main(int argc, char **argv){
     int fd, nbytes;
     ssize_t ret;
@@ -103,9 +105,10 @@ int main(int argc, char **argv){
 
     // initialized to zero, also used for zero values other than padding
     block_padding = calloc(nbytes, 1);
-    char *string5 = "This is test string number 5\n";
-    char *string9 = "This is test string number 9!\n";
-    char *string22 = "This is test string number 22 :)\n";
+    char *string5 = "This is test message number 5\n";
+    char *string9 = "This is test message number 9!\n";
+    char *string17 = "This is test message number 17 and should be the last to be written ;)\n";
+    char *string22 = "This is test message number 22 :)\n";
     for (i=0; i<num_data_blocks; i++){
         //printf("Writing block - %d\n\n", i);
         // tmp_metadata.ndx = i;
@@ -118,13 +121,15 @@ int main(int argc, char **argv){
             return -1;
         }
 
-        if (i == 5 || i==9 || i ==22){
+        if (i==5 || i==9 || i==17 || i==22){
             char *s;
             switch(i){
                 case 5:
                     s = string5; break;
                 case 9:
                     s = string9; break;
+                case 17:
+                    s = string17; break;
                 case 22:
                     s = string22; break;
             }
@@ -133,7 +138,10 @@ int main(int argc, char **argv){
             struct timespec ts;
             clock_gettime(CLOCK_REALTIME, &ts);
             // tv_nsec are the expired nsec in the second specified by tv_sec: bring all to nsec count
-            signed long long nsec = ts.tv_sec*1000 + ts.tv_nsec;
+            signed long long nsec = ts.tv_sec*BILLION + ts.tv_nsec;
+            if (i == 9 || i== 17){
+                nsec += i*10*BILLION;                   // add some random seconds to make timestamp order differ from index order
+            }
             unsigned char is_valid = BLK_VALID;
 
             // write valid_bytes

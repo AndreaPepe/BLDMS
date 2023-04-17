@@ -6,14 +6,18 @@
 #include <linux/version.h>
 #include <linux/timekeeping.h>
 #include <linux/string.h>
+#include <linux/blkdev.h>
 
 #include "include/bldms.h"
 #include "include/rcu.h"
+#include "include/syscalls.h"
 
 
 unsigned char bldms_mounted = 0;
 bldms_block **metadata_array;
 size_t md_array_size;
+struct block_device *the_device = NULL;
+uint32_t last_written_block = 0;
 
 /**
  * @brief  Returns 0 if they are equal, > 0 if lts is after rts, < 0 otherwise.
@@ -116,7 +120,7 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
     struct timespec64 curr_time;
     bldms_block **tmp_array;
     int i, nr_valid_blocks, ret;
-    rcu_elem *rcu_el;
+    //rcu_elem *rcu_el;
 
     // assign the magic number that identifies the FS
     sb->s_magic = MAGIC;
@@ -226,7 +230,8 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
 
         // if it's a valid block, also insert it into the initial RCU list
         if (metadata_array[i]->is_valid == BLK_VALID){
-            pr_info("%s: Block of index %u is valid - it has timestamp %lld\n", MOD_NAME, metadata_array[i]->ndx, metadata_array[i]->nsec);
+            // pr_info("%s: Block of index %u is valid - it has timestamp %lld\n", MOD_NAME, metadata_array[i]->ndx, metadata_array[i]->nsec);
+            
             // insert the metadata block also in the temp array and keep track of the number of valid blocks
             tmp_array[nr_valid_blocks] = metadata_array[i];
             nr_valid_blocks++;
@@ -235,7 +240,6 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
 
     //sort the array of valid blocks comparing timestamps
     merge_sort(tmp_array, 0 , nr_valid_blocks - 1);
-    kfree(tmp_array);
 
     /*
     * Initialize the RCU list of valid blocks, by pushing in order the blocks
@@ -246,16 +250,21 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
     */
     rcu_init();
     for(i=0; i<nr_valid_blocks; i++){
+        printk("%s: adding block with index %d and ts %lld to the RCU list", MOD_NAME, tmp_array[i]->ndx, tmp_array[i]->nsec);
         ret = add_valid_block(tmp_array[i]->ndx, tmp_array[i]->valid_bytes, tmp_array[i]->nsec);
         if (ret < 0){
             return ret;
         }
     }
 
-    //TEST
-    list_for_each_entry_rcu(rcu_el, &valid_blk_list, node){
-        pr_info("%s: RCU elem has index - %d\n", MOD_NAME, rcu_el->ndx);
-    }
+    // the number of the last valid block is saved to be used as a reference for finding the next block to be written
+    last_written_block = (nr_valid_blocks > 0) ? tmp_array[nr_valid_blocks - 1]->ndx : 0;
+    kfree(tmp_array);
+
+    // get a reference to the device
+    the_device = sb->s_bdev;
+    printk("%s: got a reference to the block device - the name is %s\n", MOD_NAME, the_device->bd_device.init_name);
+
     // signal that the device (with the file system) has been mounted
     bldms_mounted = 1;
 
@@ -266,6 +275,7 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
 
 static void bldms_fs_kill_sb(struct super_block *sb){
     kill_block_super(sb);
+    // TODO: free of all the metadata structures allocated!
     bldms_mounted = 0;
     printk(KERN_INFO "%s: file system unmount successful\n", MOD_NAME);
     return;
@@ -274,6 +284,10 @@ static void bldms_fs_kill_sb(struct super_block *sb){
 // Called on mount operations
 struct dentry *bldms_fs_mount(struct file_system_type *fs_type, int flags, const char *dev_name, void *data){
     struct dentry *ret;
+    if (bldms_mounted){
+        printk("%s: the device is already mounted and it supports only 1 single mount at a time\n", MOD_NAME);
+        return ERR_PTR(-EBUSY);
+    }
 
     // pass custom callback function to fill the superblock
     ret = mount_bdev(fs_type, flags, dev_name, data, bldms_fs_fill_super);
@@ -296,6 +310,13 @@ static struct file_system_type bldms_fs_type = {
 static int __init bldms_init(void){
     int ret;
 
+    // register system calls
+    ret = register_syscalls();
+    if(unlikely(ret < 0)){
+        printk("%s: something went wrong in syscall registration", MOD_NAME);
+        return ret;
+    }
+
     // register the filesystem type
     ret = register_filesystem(&bldms_fs_type);
     if (likely(ret == 0))
@@ -309,6 +330,9 @@ static int __init bldms_init(void){
 static void __exit bldms_exit(void){
     int ret;
 
+    // unregister system calls
+    unregister_syscalls();
+    
     //unregister filesystem
     ret = unregister_filesystem(&bldms_fs_type);
 

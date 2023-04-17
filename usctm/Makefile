@@ -14,8 +14,8 @@ all:
 clean:
 	make -C $(KERNELDIR) M=$(PWD) clean
 
-mount:
+insmod:
 	insmod the_usctm.ko
 
-unmount:
+rmmod:
 	rmmod the_usctm

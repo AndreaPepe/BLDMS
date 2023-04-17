@@ -170,18 +170,27 @@ set_next_blk:
 	return ret;
 
 end_of_msgs:
-	next_ts = kzalloc(sizeof(ktime_t), GFP_KERNEL);
-	if (!next_ts){
-		rcu_read_unlock();
-		return -ENOMEM;
-	}
-	// reset the session; it can begin to read again (maybe this is wrong, it should remain the last written one)
-	*next_ts = 0;
 
-	// MAYBE this swap needs to be done atomically
-	old_session_metadata = (ktime_t *) filp->private_data;
-	filp->private_data = (void *)next_ts;
-	kfree(old_session_metadata);
+	/*
+	* The following commented code was meant to reset the timestmp of the 
+	* netx block to be read in the session. But it is semantically incorrect:
+	* until the session is valid and not released, the ts should remain coherent with
+	* the previous read operations.
+	* */
+
+	// next_ts = kzalloc(sizeof(ktime_t), GFP_KERNEL);
+	// if (!next_ts){
+	// 	rcu_read_unlock();
+	// 	return -ENOMEM;
+	// }
+	// // reset the session; it can begin to read again (maybe this is wrong, it should remain the last written one)
+	// *next_ts = 0;
+
+	// // MAYBE this swap needs to be done atomically
+	// old_session_metadata = (ktime_t *) filp->private_data;
+	// filp->private_data = (void *)next_ts;
+	// kfree(old_session_metadata);
+
 	*off = file_sz;
 	rcu_read_unlock();
 	return (ret > 0) ? ret : 0;

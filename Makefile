@@ -1,10 +1,16 @@
 obj-m += the_bldms.o
-the_bldms-objs += bldms.o file_ops.o dir_ops.o rcu.o
+the_bldms-objs += bldms.o file_ops.o dir_ops.o rcu.o syscalls.o lib/usctm.o
 
 DEVICE_TYPE := "bldms_fs"
 BLOCK_SIZE := 4096
 NBLOCKS := 1000
 NR_BLOCKS_FORMAT := 102
+
+SYSCALL_TABLE = $(shell cat /sys/module/the_usctm/parameters/sys_call_table_address)
+NUM_SYSCALL_TABLE_ENTRIES = $(shell cat /sys/module/the_usctm/parameters/num_entries_found)
+SYS_NI_SYSCALL = $(shell cat /sys/module/the_usctm/parameters/sys_ni_syscall_address)
+FREE_ENTRIES = $(shell cat /sys/module/the_usctm/parameters/free_entries)
+
 
 all:
 	gcc bldmsmakefs.c -lrt -o bldmsmakefs
@@ -27,7 +33,8 @@ umount-fs:
 	umount ./mount
 
 insmod:
-	insmod the_bldms.ko
+	insmod the_bldms.ko sys_call_table_address=$(SYSCALL_TABLE) sys_ni_syscall_address=$(SYSCALL_TABLE) free_entries=$(FREE_ENTRIES) num_entries_found=$(NUM_SYSCALL_TABLE_ENTRIES)
 
 rmmod:
 	rmmod the_bldms
+	dmesg -C
