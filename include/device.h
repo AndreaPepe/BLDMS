@@ -14,7 +14,10 @@ typedef struct __attribute__((packed)) bldms_block{
 }bldms_block;
 
 #define METADATA_SIZE sizeof(bldms_block)
+#define NUM_METADATA_BLKS 2 				// superblock + unique file inode
 
 extern bldms_block **metadata_array;
 extern size_t md_array_size;
+extern uint32_t last_written_block;
+
 #endif

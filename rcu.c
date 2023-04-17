@@ -27,8 +27,8 @@ spinlock_t rcu_write_lock;
 
 
 /**
- * @brief  Adds a node representing a valid block to a RCU list of valid blocks 
- * @param  metadata: pointer to a block metadata structure
+ * @brief  Adds a node representing a valid block to a RCU list of valid blocks.
+ *         RCU locks are taken inside the function.
  * @retval less than 0 if error, 0 if ok
  */
 int add_valid_block(uint32_t ndx, uint32_t valid_bytes, ktime_t nsec){
@@ -37,7 +37,6 @@ int add_valid_block(uint32_t ndx, uint32_t valid_bytes, ktime_t nsec){
     if (!el)
         return -ENOMEM;
 
-    // FIXME: the lock should be taken before the ndx is passed, otherwise writes can overwrite each other !!!
     el->ndx = ndx;
     el->valid_bytes = valid_bytes;
     el->nsec = nsec;
@@ -47,6 +46,25 @@ int add_valid_block(uint32_t ndx, uint32_t valid_bytes, ktime_t nsec){
     spin_unlock(&rcu_write_lock);
     return 0;    
 }
+
+/**
+ * @brief  This function must be invoked only with a read lock signaled before;
+ *         such read lock should be released after the function returns. 
+ */
+int add_valid_block_secure(uint32_t ndx, uint32_t valid_bytes, ktime_t nsec){
+    rcu_elem *el;
+    el = kzalloc(sizeof(rcu_elem), GFP_KERNEL);
+    if (!el)
+        return -ENOMEM;
+
+    el->ndx = ndx;
+    el->valid_bytes = valid_bytes;
+    el->nsec = nsec;
+
+    list_add_tail_rcu(&el->node, &valid_blk_list);
+    return 0;    
+}
+
 
 int remove_valid_block(uint32_t ndx){
     rcu_elem *el;

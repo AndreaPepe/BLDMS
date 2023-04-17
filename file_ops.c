@@ -13,8 +13,6 @@
 #include "include/device.h"
 #include "include/rcu.h"
 
-#define NUM_METADATA_BLKS 2 				// superblock + unique file inode
-
 ssize_t bldms_read(struct file *filp, char __user *buf, size_t len, loff_t *off){
 	struct buffer_head *bh = NULL;
 	struct inode *f_inode = filp->f_inode;

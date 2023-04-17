@@ -16,7 +16,7 @@
 unsigned char bldms_mounted = 0;
 bldms_block **metadata_array;
 size_t md_array_size;
-struct block_device *the_device = NULL;
+char *the_device_name = NULL;
 uint32_t last_written_block = 0;
 
 /**
@@ -261,10 +261,6 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
     last_written_block = (nr_valid_blocks > 0) ? tmp_array[nr_valid_blocks - 1]->ndx : 0;
     kfree(tmp_array);
 
-    // get a reference to the device
-    the_device = sb->s_bdev;
-    printk("%s: got a reference to the block device - the name is %s\n", MOD_NAME, the_device->bd_device.init_name);
-
     // signal that the device (with the file system) has been mounted
     bldms_mounted = 1;
 
@@ -274,8 +270,18 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
 
 
 static void bldms_fs_kill_sb(struct super_block *sb){
+    int i;
     kill_block_super(sb);
-    // TODO: free of all the metadata structures allocated!
+    // TODO: the free should appen with spinlock for rcu taken; consider the creation of a specific cleanup function
+    for(i=0; i<md_array_size; i++){
+        if (metadata_array[i]->is_valid){
+            remove_valid_block(metadata_array[i]->ndx);
+        }
+        kfree(metadata_array[i]);
+    }
+    kfree(metadata_array);
+
+    the_device_name = NULL;
     bldms_mounted = 0;
     printk(KERN_INFO "%s: file system unmount successful\n", MOD_NAME);
     return;
@@ -293,8 +299,12 @@ struct dentry *bldms_fs_mount(struct file_system_type *fs_type, int flags, const
     ret = mount_bdev(fs_type, flags, dev_name, data, bldms_fs_fill_super);
     if (unlikely(IS_ERR(ret)))
         printk("%s: error mounting the file system\n", MOD_NAME);
-    else
-        printk("%s: file system correctly mounted on from device %s\n", MOD_NAME, dev_name);
+    else{
+        // save the name of the device
+        the_device_name = (char *)dev_name;
+        printk("%s: file system correctly mounted on from device %s\n", MOD_NAME, the_device_name);
+    }
+        
 
     return ret;
 }

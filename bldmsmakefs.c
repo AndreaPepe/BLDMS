@@ -105,6 +105,7 @@ int main(int argc, char **argv){
 
     // initialized to zero, also used for zero values other than padding
     block_padding = calloc(nbytes, 1);
+    char *string0 = "This is the message present at the first block\n\n";
     char *string5 = "This is test message number 5\n";
     char *string9 = "This is test message number 9!\n";
     char *string17 = "This is test message number 17 and should be the last to be written ;)\n";
@@ -121,9 +122,11 @@ int main(int argc, char **argv){
             return -1;
         }
 
-        if (i==5 || i==9 || i==17 || i==22){
+        if (i==0 || i==5 || i==9 || i==17 || i==22){
             char *s;
             switch(i){
+                case 0:
+                    s = string0; break;
                 case 5:
                     s = string5; break;
                 case 9:
@@ -141,6 +144,8 @@ int main(int argc, char **argv){
             signed long long nsec = ts.tv_sec*BILLION + ts.tv_nsec;
             if (i == 9 || i== 17){
                 nsec += i*10*BILLION;                   // add some random seconds to make timestamp order differ from index order
+            }else if (i == 0){
+                nsec += 1000*BILLION;
             }
             unsigned char is_valid = BLK_VALID;
 
