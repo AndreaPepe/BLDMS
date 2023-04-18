@@ -198,14 +198,16 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
     * Since the device is actually a file, the FS-mount operation is the same of device-mount operation 
     * */
     the_file_inode = (struct bldms_inode *) bh->b_data;
-    brelse(bh);
+    
     if (the_file_inode->file_size > NBLOCKS * DEFAULT_BLOCK_SIZE){
         // unamangeable block: too big
         return -E2BIG;
     }
-
+    
     // compute the number of blocks of the device and init an array of blocks metadata
     md_array_size = the_file_inode->file_size / DEFAULT_BLOCK_SIZE;
+    brelse(bh);
+
     metadata_array = kzalloc(sizeof(bldms_block *) * md_array_size, GFP_KERNEL);
     if(! metadata_array){
         return -ENOMEM;
@@ -218,6 +220,7 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
     for (i = 0; i < md_array_size; i++){
         bh = sb_bread(sb, i + 2);
         if (!bh){
+            // TODO: when error, free the allocated data structure before returning
             return -EIO;
         }
         metadata_array[i] = kzalloc(sizeof(bldms_block), GFP_KERNEL);

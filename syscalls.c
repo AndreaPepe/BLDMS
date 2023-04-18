@@ -153,11 +153,11 @@ asmlinkage int sys_put_data(char *source, size_t size){
     memcpy(bh->b_data, buffer, DEFAULT_BLOCK_SIZE);
     bh->b_size = DEFAULT_BLOCK_SIZE;
     mark_buffer_dirty(bh);
-    brelse(bh);
 #if SYNCHRONOUS_PUT_DATA
     // synchronously flush the changes on the block device: WARNING -> this could be a blocking call
-    fsync_bdev(the_device);
+    sync_dirty_buffer(bh);
 #endif
+    brelse(bh);
 
     // add the element to the RCU list, after the block is effectively available on the device
     add_valid_block_secure(new_elem, new_metadata->ndx, new_metadata->valid_bytes, new_metadata->nsec);
@@ -349,10 +349,10 @@ asmlinkage int sys_invalidate_data(int offset){
     // rewrite metadata on the device in order to be consistent
     memcpy(bh->b_data, metadata_array[rcu_el->ndx], METADATA_SIZE);
     mark_buffer_dirty(bh);
-    brelse(bh);
 #if SYNCHRONOUS_PUT_DATA
-    fsync_bdev(the_device);
+    sync_dirty_buffer(bh);
 #endif
+    brelse(bh);
 
     // free the rcu elem struct
     kfree(rcu_el);

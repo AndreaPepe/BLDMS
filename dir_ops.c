@@ -22,20 +22,20 @@ static int bldms_iterate(struct file *file, struct dir_context *ctx){
 	}
 
 	if (ctx->pos == 0){
-		if (!dir_emit(ctx, ".", FILENAME_MAX_LEN, ROOT_INODE_NUMBER, DT_UNKNOWN)){
+		if (!dir_emit_dot(file, ctx)){
 			return 0;
 		}else{
 			ctx->pos++;
 		}
 	}else if (ctx->pos == 1){
-		if(!dir_emit(ctx,"..", FILENAME_MAX_LEN, ROOT_INODE_NUMBER, DT_UNKNOWN)){
+		if(!dir_emit_dotdot(file, ctx)){
 			return 0;
 		}
 		else{
 			ctx->pos++;
 		}
 	}else{
-		if(!dir_emit(ctx, UNIQUE_FILE_NAME, FILENAME_MAX_LEN, ROOT_INODE_NUMBER, DT_UNKNOWN)){
+		if(!dir_emit(ctx, UNIQUE_FILE_NAME, UNIQUE_FILE_NAME_SIZE, BLDMS_INODES_BLOCK_NUMBER, DT_UNKNOWN)){
 			return 0;
 		}
 		else{

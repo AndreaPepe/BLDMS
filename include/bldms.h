@@ -7,6 +7,7 @@
 
 #define MOD_NAME "BLDMS"
 #define BLDMS_FS_NAME "bldms_fs"
+#define UNIQUE_FILE_NAME_SIZE 8
 
 #define MAGIC 0x30303030
 #define DEFAULT_BLOCK_SIZE 4096
