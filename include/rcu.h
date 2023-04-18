@@ -25,7 +25,7 @@ typedef struct _rcu_elem {
 
 /* functions*/
 extern int add_valid_block(uint32_t ndx, uint32_t valid_bytes, ktime_t nsec);
-extern int add_valid_block_secure(uint32_t ndx, uint32_t valid_bytes, ktime_t nsec);
+extern void add_valid_block_secure(rcu_elem *el, uint32_t ndx, uint32_t valid_bytes, ktime_t nsec);
 extern int remove_valid_block(uint32_t ndx);
 extern inline void rcu_init(void);
 #endif

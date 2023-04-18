@@ -277,11 +277,12 @@ int bldms_open(struct inode *inode, struct file *filp){
 	}else if ((filp->f_flags & O_ACCMODE) == O_WRONLY){
 		// the lock will be required only in the specific write operations
 		pr_info("%s: the device has been opened in WRONLY mode\n", MOD_NAME);
-	}else{
-		// decrement module usage count
-		module_put(THIS_MODULE);
-		return -EACCES; 
 	}
+	// }else{
+	// 	// decrement module usage count
+	// 	module_put(THIS_MODULE);
+	// 	return -EACCES; 
+	// }
 	pr_info("%s: the device has been opened correctly\n", MOD_NAME);
 	return 0;
 }

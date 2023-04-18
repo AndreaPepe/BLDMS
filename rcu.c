@@ -49,20 +49,17 @@ int add_valid_block(uint32_t ndx, uint32_t valid_bytes, ktime_t nsec){
 
 /**
  * @brief  This function must be invoked only with a read lock signaled before;
- *         such read lock should be released after the function returns. 
+ *         such read lock should be released after the function returns.
+ *         The function expects a pointer to a dynamically allocated 
+ *         rcu element structure to fill and insert in the list.  
  */
-int add_valid_block_secure(uint32_t ndx, uint32_t valid_bytes, ktime_t nsec){
-    rcu_elem *el;
-    el = kzalloc(sizeof(rcu_elem), GFP_KERNEL);
-    if (!el)
-        return -ENOMEM;
-
+void inline add_valid_block_secure(rcu_elem *el, uint32_t ndx, uint32_t valid_bytes, ktime_t nsec){
     el->ndx = ndx;
     el->valid_bytes = valid_bytes;
     el->nsec = nsec;
 
     list_add_tail_rcu(&el->node, &valid_blk_list);
-    return 0;    
+    return;    
 }
 
 
