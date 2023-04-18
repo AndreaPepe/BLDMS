@@ -160,7 +160,8 @@ asmlinkage int sys_put_data(char *source, size_t size){
     brelse(bh);
 
     // add the element to the RCU list, after the block is effectively available on the device
-    add_valid_block_secure(new_elem, new_metadata->ndx, new_metadata->valid_bytes, new_metadata->nsec);
+    // to avoid wrong ordering of the RCU list, invoke the in order insertion of the node
+    add_valid_block_in_order_secure(new_elem, new_metadata->ndx, new_metadata->valid_bytes, new_metadata->nsec);
 
     // update the metadata structure and the last written block and release the lock to make changes effective
     metadata_array[target_block] = new_metadata;

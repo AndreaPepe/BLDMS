@@ -35,7 +35,7 @@ static int bldms_iterate(struct file *file, struct dir_context *ctx){
 			ctx->pos++;
 		}
 	}else{
-		if(!dir_emit(ctx, UNIQUE_FILE_NAME, UNIQUE_FILE_NAME_SIZE, BLDMS_INODES_BLOCK_NUMBER, DT_UNKNOWN)){
+		if(!dir_emit(ctx, UNIQUE_FILE_NAME, UNIQUE_FILE_NAME_SIZE, BLDMS_SINGLEFILE_INODE_NUMBER, DT_UNKNOWN)){
 			return 0;
 		}
 		else{

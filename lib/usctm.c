@@ -53,7 +53,7 @@ module_param(sys_ni_syscall_address, ulong, 0660);
 #define MAX_FREE 15
 #define MAX_ACQUIRES 4
 int free_entries[MAX_FREE];
-module_param_array(free_entries,int,NULL,0660);//default array size already known - here we expose what entries are free
+module_param_array(free_entries,int,NULL,0660);//default array size already known - here we expect to receive what entries are free
 int num_entries_found;
 module_param(num_entries_found, int, 0660);
 

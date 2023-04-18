@@ -22,10 +22,6 @@ uint32_t last_written_block = 0;
 /**
  * @brief  Returns 0 if they are equal, > 0 if lts is after rts, < 0 otherwise.
  */
-static inline long timespec64_comp(struct timespec64 lts, struct timespec64 rts){
-    return timespec64_sub(lts, rts).tv_nsec;
-}
-
 static inline long ktime_comp(ktime_t lkt, ktime_t rkt){
     return lkt - rkt;
 }
@@ -120,7 +116,7 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
     struct timespec64 curr_time;
     bldms_block **tmp_array;
     int i, nr_valid_blocks, ret;
-    //rcu_elem *rcu_el;
+    rcu_elem *rcu_el;
 
     // assign the magic number that identifies the FS
     sb->s_magic = MAGIC;
@@ -187,15 +183,14 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
     unlock_new_inode(root_inode);
 
 
-    // check if the number of blocks of the unique file of the FS is at most NBLOCKS
-    bh = sb_bread(sb, BLDMS_INODES_BLOCK_NUMBER);
+    bh = sb_bread(sb, BLDMS_SINGLEFILE_INODE_NUMBER);
     if(!bh){
         return -EIO;
     }
     
     /*
     * Check on the maximum number of manageable blocks
-    * Since the device is actually a file, the FS-mount operation is the same of device-mount operation 
+    * Since the device is actually a file, the FS-mount operation corresponds to the device-mount operation 
     * */
     the_file_inode = (struct bldms_inode *) bh->b_data;
     
@@ -215,19 +210,36 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
     pr_info("%s: the device has %lu blocks\n", MOD_NAME, md_array_size);
 
     // this is a temp array used to order blocks by ascending timestamp, in order to place them in order in the RCU list
-    tmp_array = kzalloc(sizeof(bldms_block *) * md_array_size, GFP_KERNEL);
+    if(sizeof(bldms_block *) * md_array_size > 1024 * PAGE_SIZE){
+        // kzalloc can only allocate up to 4MB; if bigger, use vcalloc
+        tmp_array = vcalloc(sizeof(bldms_block *), md_array_size);
+        if(!tmp_array){
+            vfree(metadata_array);
+            return -EINVAL;
+        }
+    }else{
+        tmp_array = kzalloc(sizeof(bldms_block *) * md_array_size, GFP_KERNEL);
+        if(!tmp_array){
+            kfree(metadata_array);
+            return -EINVAL;
+        }
+    }
+    
+    
     nr_valid_blocks = 0;
     for (i = 0; i < md_array_size; i++){
         bh = sb_bread(sb, i + 2);
-        if (!bh){
-            // TODO: when error, free the allocated data structure before returning
-            return -EIO;
-        }
         metadata_array[i] = kzalloc(sizeof(bldms_block), GFP_KERNEL);
         if (!metadata_array[i]){
-            return -ENOMEM;
+            i--;
+            ret = -ENOMEM;
+            goto err_and_clean;
         }
-        
+        if (!bh){
+            // TODO: when error, free the allocated data structure before returning
+            ret = -EIO;
+            goto err_and_clean;
+        }       
         memcpy(metadata_array[i], bh->b_data, sizeof(bldms_block));
         brelse(bh);
 
@@ -256,37 +268,66 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
         printk("%s: adding block with index %d and ts %lld to the RCU list", MOD_NAME, tmp_array[i]->ndx, tmp_array[i]->nsec);
         ret = add_valid_block(tmp_array[i]->ndx, tmp_array[i]->valid_bytes, tmp_array[i]->nsec);
         if (ret < 0){
-            return ret;
+            goto err_and_clean_rcu;
         }
     }
 
     // the number of the last valid block is saved to be used as a reference for finding the next block to be written
     last_written_block = (nr_valid_blocks > 0) ? tmp_array[nr_valid_blocks - 1]->ndx : 0;
-    kfree(tmp_array);
+    if(sizeof(bldms_block *) * md_array_size > 1024 * PAGE_SIZE){
+        vfree(tmp_array);
+    }else{
+        kfree(tmp_array);
+    }
 
     // signal that the device (with the file system) has been mounted
     bldms_mounted = 1;
 
     return 0;
+
+err_and_clean_rcu:
+    // no need to be RCU-safe here, since no one can actually access the list in initialization phase
+    list_for_each_entry(rcu_el, &valid_blk_list, node){
+        list_del(&(rcu_el->node));
+        kfree(rcu_el);
+    }
+
+err_and_clean:
+    for(; i >= 0; i--){
+        kfree(metadata_array[i]);
+    }
+
+    if(sizeof(bldms_block *) * md_array_size > 1024 * PAGE_SIZE){
+        vfree(tmp_array);
+        vfree(metadata_array);
+    }else{
+        kfree(tmp_array);
+        kfree(metadata_array);
+    }
+
+    return ret;
 }
 
 
 
 static void bldms_fs_kill_sb(struct super_block *sb){
-    int i;
     kill_block_super(sb);
-    // TODO: the free should appen with spinlock for rcu taken; consider the creation of a specific cleanup function
-    for(i=0; i<md_array_size; i++){
-        if (metadata_array[i]->is_valid){
-            remove_valid_block(metadata_array[i]->ndx);
-        }
-        kfree(metadata_array[i]);
+    
+    // take the spinlock and release it only when all rcu elements are safely deleted from the list
+    spin_lock(&rcu_write_lock);
+    remove_all_entries_secure();
+    
+
+    if(sizeof(bldms_block *) * md_array_size > 1024 * PAGE_SIZE){
+        vfree(metadata_array);
+    }else{
+        kfree(metadata_array);
     }
-    kfree(metadata_array);
 
     the_device_name = NULL;
     bldms_mounted = 0;
     printk(KERN_INFO "%s: file system unmount successful\n", MOD_NAME);
+    spin_unlock(&rcu_write_lock);
     return;
 }
 

@@ -62,6 +62,31 @@ void inline add_valid_block_secure(rcu_elem *el, uint32_t ndx, uint32_t valid_by
     return;    
 }
 
+void inline add_valid_block_in_order_secure(rcu_elem *el, uint32_t ndx, uint32_t valid_bytes, ktime_t nsec){
+    rcu_elem *prev;
+    struct list_head *next;
+    el->ndx = ndx;
+    el->valid_bytes = valid_bytes;
+    el->nsec = nsec;
+
+    if (&valid_blk_list == (&valid_blk_list)->next){
+        // the list is empty: just insert the node
+        list_add_tail_rcu(&(el->node), &valid_blk_list);
+        return;
+    }
+
+    list_for_each_entry_reverse(prev, &valid_blk_list, node){
+        if (prev->nsec < el->nsec){
+            // this is the first node to have a timestamp lower than the new node
+            // insert the new node after this one
+            next = prev->node.next;
+            __list_add_rcu(&(el->node), &(prev->node), next);
+            break;
+        }
+    }
+    return;    
+}
+
 
 int remove_valid_block(uint32_t ndx){
     rcu_elem *el;
@@ -85,6 +110,20 @@ int remove_valid_block(uint32_t ndx){
 
     spin_unlock(&rcu_write_lock);
     return -ENODATA;
+}
+
+void remove_all_entries_secure(void){
+    rcu_elem *el;
+
+    // write lock should be taken outside
+    list_for_each_entry(el, &valid_blk_list, node){
+        // this is the element to be removed
+        list_del_rcu(&el->node);
+
+        // wait for the grace period and then free the removed element
+        synchronize_rcu();
+        kfree(el);
+    }
 }
 
 inline void rcu_init(void){

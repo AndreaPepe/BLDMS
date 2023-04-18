@@ -13,7 +13,7 @@
 #define DEFAULT_BLOCK_SIZE 4096
 
 #ifndef NBLOCKS
-    #define NBLOCKS 100
+    #define NBLOCKS 1000
 #endif
 
 #define SB_BLOCK_NUMBER 0
