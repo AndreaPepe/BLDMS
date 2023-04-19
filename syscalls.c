@@ -106,22 +106,23 @@ asmlinkage int sys_put_data(char *source, size_t size){
     }
 
     /*
-    * The following calls are performed also if they are not strictly necessary
-    * (e.g.) there are no free blocks where to write. They are here in order to reduce 
+    * The following calls are always performed, also if they could be not necessary:
+    * e.g. there are no free blocks where to write. They are anticipated here in order to reduce 
     * the size of the critical section and avoid possibly blocking calls.
     * 
     * WARNING: calling ktime_get_real() here could result in an out of (timestamp) order
     * insertion in the RCU list. (This thread could sleep and another one could just take
-    * the write spinlock before this one).
+    * the write spinlock before this one). Adding the new node to the tail of the RCU list
+    * is not safe and an in-order insertion is required to guarantee the ordering of the list.
     * */
-    // memcpy(new_metadata, old_metadata, sizeof(bldms_block));
+
     // get the actual time as creation timestamp for the message
     new_metadata->nsec = ktime_get_real();
     printk("%s: creation timestamp for the message is %lld\n", MOD_NAME, new_metadata->nsec);
     new_metadata->is_valid = BLK_VALID;
     new_metadata->valid_bytes = size;
     // write the block metadata in the in-memory buffer
-    // memcpy(buffer, (char *)new_metadata, sizeof(bldms_block));
+    memcpy(buffer, (char *)new_metadata, sizeof(bldms_block));
 
     /*
     * BEGINNING OF CRITICAL SECTION
@@ -150,9 +151,6 @@ asmlinkage int sys_put_data(char *source, size_t size){
     }
 
     old_metadata = metadata_array[target_block];
-    // TODO: move these operations out of the critical section when the ndx field will be removed from the metadata
-    new_metadata->ndx = target_block;
-    memcpy(buffer, (char *)new_metadata, sizeof(bldms_block));
 
     /*
     * Since the target block is invalid, it surely will never become valid until the write_lock is released.
@@ -176,7 +174,7 @@ asmlinkage int sys_put_data(char *source, size_t size){
 
     // add the element to the RCU list, after the block is effectively available on the device
     // to avoid wrong ordering of the RCU list, invoke the in order insertion of the node
-    add_valid_block_in_order_secure(new_elem, new_metadata->ndx, new_metadata->valid_bytes, new_metadata->nsec);
+    add_valid_block_in_order_secure(new_elem, target_block, new_metadata->valid_bytes, new_metadata->nsec);
 
     // update the metadata structure and the last written block and release the lock to make changes effective
     metadata_array[target_block] = new_metadata;

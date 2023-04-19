@@ -92,16 +92,12 @@ int main(int argc, char **argv){
 
     /*
     * Init metadata of blocks:
-    * - ndx: 32 bits set to the value of the block in the device
-    * - valid_bytes: 32 bits initialized to zero
     * - nsec: 64 bits (s64) timestamp value initialized to zero
+    * - valid_bytes: 32 bits initialized to zero
     * - is_valid: 1 byte, initialized to 0 (not valid) for each block
     * */
     num_data_blocks = file_inode.file_size / DEFAULT_BLOCK_SIZE;
-    // tmp_metadata.is_valid = BLK_INVALID;
-    // tmp_metadata.ts.tv_nsec = 0;
-    // tmp_metadata.ts.tv_sec = 0;
-    nbytes = DEFAULT_BLOCK_SIZE - sizeof(uint32_t) - sizeof(uint32_t) - sizeof(long) -sizeof(unsigned char);
+    nbytes = DEFAULT_BLOCK_SIZE -sizeof(long) -sizeof(uint32_t) -sizeof(unsigned char);
 
     // initialized to zero, also used for zero values other than padding
     block_padding = calloc(nbytes, 1);
@@ -111,8 +107,6 @@ int main(int argc, char **argv){
     char *string17 = "This is test message number 17 and should be the last to be written ;)\n";
     char *string22 = "This is test message number 22 :)\n";
     for (i=0; i<num_data_blocks; i++){
-        //printf("Writing block - %d\n\n", i);
-        // tmp_metadata.ndx = i;
 
         // write ndx
         ret = write(fd, &i, sizeof(uint32_t));
@@ -149,18 +143,18 @@ int main(int argc, char **argv){
             }
             unsigned char is_valid = BLK_VALID;
 
-            // write valid_bytes
-            ret = write(fd, &valid_bytes, sizeof(uint32_t));
-            if (ret != sizeof(uint32_t)){
-                printf("Error writing device block's metadata (valid bytes)\n");
-                close(fd);
-                return -1;
-            }
-
             // write timestamp
             ret = write(fd, &nsec, sizeof(long));
             if (ret != sizeof(long)){
                 printf("Error writing device block's metadata (nsec)\n");
+                close(fd);
+                return -1;
+            }
+
+            // write valid_bytes
+            ret = write(fd, &valid_bytes, sizeof(uint32_t));
+            if (ret != sizeof(uint32_t)){
+                printf("Error writing device block's metadata (valid bytes)\n");
                 close(fd);
                 return -1;
             }
@@ -190,7 +184,7 @@ int main(int argc, char **argv){
             }
             continue;
         }
-        // write valid_bytes + timestamp + is_valid
+        // write timestamp + valid_bytes + is_valid
         ret = write(fd, block_padding, sizeof(uint32_t) + sizeof(long) + sizeof(unsigned char));
         if (ret != sizeof(uint32_t) + sizeof(long) + sizeof(unsigned char)){
             printf("Error writing device block's metadata (fields set to 0)\n");

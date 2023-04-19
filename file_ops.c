@@ -157,37 +157,27 @@ set_next_blk:
 	filp->private_data = (void *)next_ts;
 	kfree(old_session_metadata);
 
-	// set the offset to the beginning of data of the next valid block
+	/*
+	* set the offset to the beginning of data of the next valid block:
+	* this is not strictly necessary, since the message delivered on the next call
+	* will be typically determined by the timestamp registered in the session structure
+	*/
 	*off = (next_el->ndx * DEFAULT_BLOCK_SIZE) + METADATA_SIZE;
 
-	// save the value to be returned in a local variable, since the read unlock could cause the free of the RCU elem
-	//ret = next_el->valid_bytes;
+
+	// signal the end of the RCU read-side critical section
 	rcu_read_unlock();
-	// return residuals equal to the next block's content size 
-	// WARNING: here we should return the number of READ bytes, not the residuals
+ 
+	// return the number of READ bytes, not the residuals
 	return ret;
 
 end_of_msgs:
 
 	/*
-	* The following commented code was meant to reset the timestmp of the 
-	* netx block to be read in the session. But it is semantically incorrect:
-	* until the session is valid and not released, the ts should remain coherent with
-	* the previous read operations.
+	* If there are no more messages to be delivered, set the offset equal to the size of the file,
+	* in order to make the caller finish.
+	* Signal the end of the RCU read-side critical section.
 	* */
-
-	// next_ts = kzalloc(sizeof(ktime_t), GFP_KERNEL);
-	// if (!next_ts){
-	// 	rcu_read_unlock();
-	// 	return -ENOMEM;
-	// }
-	// // reset the session; it can begin to read again (maybe this is wrong, it should remain the last written one)
-	// *next_ts = 0;
-
-	// // MAYBE this swap needs to be done atomically
-	// old_session_metadata = (ktime_t *) filp->private_data;
-	// filp->private_data = (void *)next_ts;
-	// kfree(old_session_metadata);
 
 	*off = file_sz;
 	rcu_read_unlock();

@@ -7,9 +7,8 @@
 
 // device's block metadata
 typedef struct __attribute__((packed)) bldms_block{
-    uint32_t ndx;                   // 32 bit
+    ktime_t nsec;                   // 64 bit
     uint32_t valid_bytes;           // 32 bit
-    ktime_t nsec;                   // 64 bit   
     unsigned char is_valid;         // 8 bit    
 }bldms_block;
 

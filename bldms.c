@@ -50,8 +50,7 @@ void merge(bldms_block **arr, int l, int m, int r)
     while (i < n1 && j < n2) {
         //comparison = timespec64_comp(L[i]->ts, R[j]->ts);
         comparison = ktime_comp(L[i]->nsec, R[j]->nsec);
-        if (comparison < 0 || (comparison == 0 && L[i]->ndx < R[j]->ndx)) {
-            // if the timestamp is the same, order by index of the block
+        if (comparison < 0 ) {
             // left timestamp is before right timestamp
             arr[k] = L[i];
             i++;
@@ -115,7 +114,8 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
     uint64_t magic;
     struct timespec64 curr_time;
     bldms_block **tmp_array;
-    int i, nr_valid_blocks, ret;
+    int i, last_valid_block, ret;
+    int *valid_indexes;
     rcu_elem *rcu_el;
 
     // assign the magic number that identifies the FS
@@ -203,42 +203,57 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
     md_array_size = the_file_inode->file_size / DEFAULT_BLOCK_SIZE;
     brelse(bh);
 
-    metadata_array = kzalloc(sizeof(bldms_block *) * md_array_size, GFP_KERNEL);
-    if(! metadata_array){
-        return -ENOMEM;
-    }
     pr_info("%s: the device has %lu blocks\n", MOD_NAME, md_array_size);
 
     // this is a temp array used to order blocks by ascending timestamp, in order to place them in order in the RCU list
     if(sizeof(bldms_block *) * md_array_size > 1024 * PAGE_SIZE){
         // kzalloc can only allocate up to 4MB; if bigger, use vcalloc
-        tmp_array = vcalloc(sizeof(bldms_block *), md_array_size);
-        if(!tmp_array){
-            vfree(metadata_array);
+        metadata_array = vcalloc(sizeof(bldms_block *), md_array_size);
+        if(!metadata_array){
             return -EINVAL;
         }
+        // tmp_array = vcalloc(sizeof(bldms_block *), md_array_size);
+        // if(!tmp_array){
+        //     vfree(metadata_array);
+        //     return -EINVAL;
+        // }
+        // valid_indexes = vcalloc(sizeof(int), md_array_size);
+        // if(!valid_indexes){
+        //     vfree(tmp_array);
+        //     vfree(metadata_array);
+        //     return -EINVAL;
+        // }
     }else{
-        tmp_array = kzalloc(sizeof(bldms_block *) * md_array_size, GFP_KERNEL);
-        if(!tmp_array){
-            kfree(metadata_array);
+        metadata_array = kzalloc(sizeof(bldms_block *) * md_array_size, GFP_KERNEL);
+        if(!metadata_array){
             return -EINVAL;
         }
+        // tmp_array = kzalloc(sizeof(bldms_block *) * md_array_size, GFP_KERNEL);
+        // if(!tmp_array){
+        //     kfree(metadata_array);
+        //     return -EINVAL;
+        // }
+        // valid_indexes = kzalloc(sizeof(int) * md_array_size, GFP_KERNEL);
+        // if(!valid_indexes){
+        //     kfree(tmp_array);
+        //     kfree(metadata_array);
+        //     return -EINVAL;
+        // }
     }
-    
-    
-    nr_valid_blocks = 0;
+    pr_info("%s: metadata array allocated\n", MOD_NAME);
+    rcu_init();
     for (i = 0; i < md_array_size; i++){
-        bh = sb_bread(sb, i + 2);
+        bh = sb_bread(sb, i + NUM_METADATA_BLKS);
         metadata_array[i] = kzalloc(sizeof(bldms_block), GFP_KERNEL);
         if (!metadata_array[i]){
             i--;
             ret = -ENOMEM;
-            goto err_and_clean;
+            goto err_and_clean_rcu;
         }
         if (!bh){
-            // TODO: when error, free the allocated data structure before returning
+            // when error, free the allocated data structure before returning
             ret = -EIO;
-            goto err_and_clean;
+            goto err_and_clean_rcu;
         }       
         memcpy(metadata_array[i], bh->b_data, sizeof(bldms_block));
         brelse(bh);
@@ -246,15 +261,25 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
         // if it's a valid block, also insert it into the initial RCU list
         if (metadata_array[i]->is_valid == BLK_VALID){
             // pr_info("%s: Block of index %u is valid - it has timestamp %lld\n", MOD_NAME, metadata_array[i]->ndx, metadata_array[i]->nsec);
-            
+            rcu_el = kzalloc(sizeof(rcu_elem), GFP_KERNEL);
+            if(!rcu_el){
+                ret = -ENOMEM;
+                goto err_and_clean_rcu;
+            }
+            add_valid_block_in_order_secure(rcu_el, i, metadata_array[i]->valid_bytes, metadata_array[i]->nsec);
             // insert the metadata block also in the temp array and keep track of the number of valid blocks
-            tmp_array[nr_valid_blocks] = metadata_array[i];
-            nr_valid_blocks++;
+            // tmp_array[nr_valid_blocks] = metadata_array[i];
+            // valid_indexes[nr_valid_blocks] = i;
+            // nr_valid_blocks++;
         }
     }
 
+    list_for_each_entry(rcu_el, &valid_blk_list, node){
+        printk("%s: RCU elem with index %d is present\n", MOD_NAME, rcu_el->ndx);
+    }
+
     //sort the array of valid blocks comparing timestamps
-    merge_sort(tmp_array, 0 , nr_valid_blocks - 1);
+    // merge_sort(tmp_array, 0 , nr_valid_blocks - 1);
 
     /*
     * Initialize the RCU list of valid blocks, by pushing in order the blocks
@@ -263,22 +288,25 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
     * will happen only on write operations with a timestamp greater of the timestamps
     * of the previous valid blocks: so, push to the tail of the RCU list is enough. 
     */
-    rcu_init();
-    for(i=0; i<nr_valid_blocks; i++){
-        printk("%s: adding block with index %d and ts %lld to the RCU list", MOD_NAME, tmp_array[i]->ndx, tmp_array[i]->nsec);
-        ret = add_valid_block(tmp_array[i]->ndx, tmp_array[i]->valid_bytes, tmp_array[i]->nsec);
-        if (ret < 0){
-            goto err_and_clean_rcu;
-        }
-    }
+    // rcu_init();
+    // for(i=0; i<nr_valid_blocks; i++){
+    //     printk("%s: adding block with index %d and ts %lld to the RCU list", MOD_NAME, valid_indexes[i], tmp_array[i]->nsec);
+    //     ret = add_valid_block(valid_indexes[i], tmp_array[i]->valid_bytes, tmp_array[i]->nsec);
+    //     if (ret < 0){
+    //         goto err_and_clean_rcu;
+    //     }
+    // }
 
     // the number of the last valid block is saved to be used as a reference for finding the next block to be written
-    last_written_block = (nr_valid_blocks > 0) ? tmp_array[nr_valid_blocks - 1]->ndx : 0;
-    if(sizeof(bldms_block *) * md_array_size > 1024 * PAGE_SIZE){
-        vfree(tmp_array);
-    }else{
-        kfree(tmp_array);
-    }
+    
+    last_written_block = (list_empty(&valid_blk_list)) ? list_last_entry(&valid_blk_list, rcu_elem, node)->ndx : 0;
+    // if(sizeof(bldms_block *) * md_array_size > 1024 * PAGE_SIZE){
+    //     vfree(tmp_array);
+    //     vfree(valid_indexes);
+    // }else{
+    //     kfree(tmp_array);
+    //     kfree(valid_indexes);
+    // }
 
     // signal that the device (with the file system) has been mounted
     bldms_mounted = 1;
@@ -298,11 +326,13 @@ err_and_clean:
     }
 
     if(sizeof(bldms_block *) * md_array_size > 1024 * PAGE_SIZE){
-        vfree(tmp_array);
+        // vfree(tmp_array);
         vfree(metadata_array);
+        // vfree(valid_indexes);
     }else{
-        kfree(tmp_array);
+        // kfree(tmp_array);
         kfree(metadata_array);
+        // kfree(valid_indexes);
     }
 
     return ret;
