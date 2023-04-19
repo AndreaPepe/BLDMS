@@ -1,11 +1,11 @@
 # put here the arguments that will be passed to the user program 
 DEVICE_FILEPATH = "../mount/the_file"
 PUT_DATA_NR = 134
-GET_DATA_NR = 135
-INVALIDATE_DATA_NR = 136
+GET_DATA_NR = 156
+INVALIDATE_DATA_NR = 174
 
 all:
-	gcc user.c -o user -lpthread
+	gcc user.c -o user
 
 clean:
 	rm user

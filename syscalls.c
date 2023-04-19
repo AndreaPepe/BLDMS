@@ -47,6 +47,12 @@ asmlinkage int sys_put_data(char *source, size_t size){
         return -E2BIG;
     }
 
+    buffer = kzalloc(DEFAULT_BLOCK_SIZE, GFP_KERNEL);
+    if(!buffer){
+        blkdev_put(the_device, FMODE_WRITE | FMODE_READ);
+        return -EADDRNOTAVAIL;
+    }
+
     copied = copy_from_user(buffer + METADATA_SIZE, source, size);
     if (copied != 0){
         printk("%s: copy_from_user() unable to read the full message\n", MOD_NAME);
@@ -57,27 +63,33 @@ asmlinkage int sys_put_data(char *source, size_t size){
         printk("%s: the device name is NULL\n", MOD_NAME);
         return -1;
     }
-
+    
     // get a reference to the device
     the_device = blkdev_get_by_path(the_device_name, FMODE_WRITE | FMODE_READ, NULL);
     if (IS_ERR(the_device)){
-        printk("%s: blkdev_get_by_path() failed in put_data() system call\n", MOD_NAME);
+        printk("%s: blkdev_get_by_path() failed in put_data() system call with errno: %lu\n", MOD_NAME, (unsigned long)the_device);
         return -1;
     }
 
     // get a reference to the superblock
+    if(!the_device){
+        printk("%s: the device is NULL\n", MOD_NAME);
+        kfree(buffer);
+        return -EINVAL;
+    }
+    printk("%s: Device is not null\n", MOD_NAME);
+
     sb = the_device->bd_super;
+    if(!sb){
+        printk("%s: superblock is NULL\n", MOD_NAME);
+        kfree(buffer);
+        return -EINVAL;
+    }
 
     /*
     * Make all the required allocations before the critical section, in order to make it
     * the shortest as possible with possibly non-blocking calls in it.
     */
-    buffer = kzalloc(DEFAULT_BLOCK_SIZE, GFP_KERNEL);
-    if(!buffer){
-        blkdev_put(the_device, FMODE_WRITE | FMODE_READ);
-        return -EADDRNOTAVAIL;
-    }
-
     new_elem = kzalloc(sizeof(rcu_elem), GFP_KERNEL);
     if(!new_elem){
         kfree(buffer);
@@ -102,14 +114,14 @@ asmlinkage int sys_put_data(char *source, size_t size){
     * insertion in the RCU list. (This thread could sleep and another one could just take
     * the write spinlock before this one).
     * */
-    memcpy(new_metadata, old_metadata, sizeof(bldms_block));
+    // memcpy(new_metadata, old_metadata, sizeof(bldms_block));
     // get the actual time as creation timestamp for the message
     new_metadata->nsec = ktime_get_real();
     printk("%s: creation timestamp for the message is %lld\n", MOD_NAME, new_metadata->nsec);
     new_metadata->is_valid = BLK_VALID;
     new_metadata->valid_bytes = size;
     // write the block metadata in the in-memory buffer
-    memcpy(buffer, (char *)new_metadata, sizeof(bldms_block));
+    // memcpy(buffer, (char *)new_metadata, sizeof(bldms_block));
 
     /*
     * BEGINNING OF CRITICAL SECTION
@@ -138,6 +150,9 @@ asmlinkage int sys_put_data(char *source, size_t size){
     }
 
     old_metadata = metadata_array[target_block];
+    // TODO: move these operations out of the critical section when the ndx field will be removed from the metadata
+    new_metadata->ndx = target_block;
+    memcpy(buffer, (char *)new_metadata, sizeof(bldms_block));
 
     /*
     * Since the target block is invalid, it surely will never become valid until the write_lock is released.

@@ -324,6 +324,9 @@ static void bldms_fs_kill_sb(struct super_block *sb){
         kfree(metadata_array);
     }
 
+    if(the_device_name){
+        kfree(the_device_name);
+    }
     the_device_name = NULL;
     bldms_mounted = 0;
     printk(KERN_INFO "%s: file system unmount successful\n", MOD_NAME);
@@ -339,13 +342,19 @@ struct dentry *bldms_fs_mount(struct file_system_type *fs_type, int flags, const
         return ERR_PTR(-EBUSY);
     }
 
+    the_device_name = kzalloc(strlen(dev_name) + 1, GFP_KERNEL);
+    if(!the_device_name){
+    printk("%s: unable to allocate memory for storing the device name\n", MOD_NAME);
+        return ERR_PTR(-ENOMEM);
+    }
+    
     // pass custom callback function to fill the superblock
     ret = mount_bdev(fs_type, flags, dev_name, data, bldms_fs_fill_super);
     if (unlikely(IS_ERR(ret)))
         printk("%s: error mounting the file system\n", MOD_NAME);
     else{
         // save the name of the device
-        the_device_name = (char *)dev_name;
+        memcpy(the_device_name, dev_name, strlen(dev_name) + 1);
         printk("%s: file system correctly mounted on from device %s\n", MOD_NAME, the_device_name);
     }
         
