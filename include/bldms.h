@@ -31,7 +31,7 @@
 
 
 extern unsigned char bldms_mounted;
-extern char *the_device_name;
+extern struct super_block *the_dev_superblock;
 
 
 

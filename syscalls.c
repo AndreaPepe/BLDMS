@@ -30,7 +30,6 @@ asmlinkage int sys_put_data(char *source, size_t size){
     int i, ret;
     unsigned long copied;
     uint32_t target_block;
-    struct block_device *the_device;
     struct super_block *sb;
     struct buffer_head *bh;
 
@@ -47,43 +46,22 @@ asmlinkage int sys_put_data(char *source, size_t size){
         return -E2BIG;
     }
 
+    // get a reference to the superblock
+    sb = the_dev_superblock;
+    if(!sb){
+        return -EINVAL;
+    }
+
     buffer = kzalloc(DEFAULT_BLOCK_SIZE, GFP_KERNEL);
     if(!buffer){
-        blkdev_put(the_device, FMODE_WRITE | FMODE_READ);
         return -EADDRNOTAVAIL;
     }
 
     copied = copy_from_user(buffer + METADATA_SIZE, source, size);
     if (copied != 0){
+        kfree(buffer);
         printk("%s: copy_from_user() unable to read the full message\n", MOD_NAME);
         return -EMSGSIZE;
-    }
-
-    if(!the_device_name){
-        printk("%s: the device name is NULL\n", MOD_NAME);
-        return -1;
-    }
-    
-    // get a reference to the device
-    the_device = blkdev_get_by_path(the_device_name, FMODE_WRITE | FMODE_READ, NULL);
-    if (IS_ERR(the_device)){
-        printk("%s: blkdev_get_by_path() failed in put_data() system call with errno: %lu\n", MOD_NAME, (unsigned long)the_device);
-        return -1;
-    }
-
-    // get a reference to the superblock
-    if(!the_device){
-        printk("%s: the device is NULL\n", MOD_NAME);
-        kfree(buffer);
-        return -EINVAL;
-    }
-    printk("%s: Device is not null\n", MOD_NAME);
-
-    sb = the_device->bd_super;
-    if(!sb){
-        printk("%s: superblock is NULL\n", MOD_NAME);
-        kfree(buffer);
-        return -EINVAL;
     }
 
     /*
@@ -93,7 +71,6 @@ asmlinkage int sys_put_data(char *source, size_t size){
     new_elem = kzalloc(sizeof(rcu_elem), GFP_KERNEL);
     if(!new_elem){
         kfree(buffer);
-        blkdev_put(the_device, FMODE_WRITE | FMODE_READ);
         return -EADDRNOTAVAIL;
     }
 
@@ -101,7 +78,6 @@ asmlinkage int sys_put_data(char *source, size_t size){
     if(!new_metadata){
         kfree(buffer);
         kfree(new_elem);
-        blkdev_put(the_device, FMODE_WRITE | FMODE_READ);
         return -EADDRNOTAVAIL;
     }
 
@@ -132,7 +108,8 @@ asmlinkage int sys_put_data(char *source, size_t size){
     */
     spin_lock(&rcu_write_lock);
     target_block = -1;
-    for(i=last_written_block + 1; i != last_written_block; i = ((i+1)% md_array_size)){
+    for(i=((last_written_block + 1) % md_array_size); i != last_written_block; i = ((i+1)% md_array_size)){
+        printk("%s: last_written_block is %d, i=%d\n", MOD_NAME, last_written_block, i);
         /*
         * The next free block to perform the valid operation is chosen 
         * in a circular buffer manner, starting from the block following the last written one.
@@ -174,7 +151,7 @@ asmlinkage int sys_put_data(char *source, size_t size){
 
     // add the element to the RCU list, after the block is effectively available on the device
     // to avoid wrong ordering of the RCU list, invoke the in order insertion of the node
-    add_valid_block_in_order_secure(new_elem, target_block, new_metadata->valid_bytes, new_metadata->nsec);
+    add_valid_block_in_order_secure(new_elem, target_block , new_metadata->valid_bytes, new_metadata->nsec);
 
     // update the metadata structure and the last written block and release the lock to make changes effective
     metadata_array[target_block] = new_metadata;
@@ -182,7 +159,6 @@ asmlinkage int sys_put_data(char *source, size_t size){
     spin_unlock(&rcu_write_lock);
 
     /* END OF CRITICAL SECTION */
-    blkdev_put(the_device, FMODE_WRITE | FMODE_READ);
     kfree(buffer);
     kfree(old_metadata);
     return (int)target_block;
@@ -191,7 +167,6 @@ error:
     spin_unlock(&rcu_write_lock);
 
     printk("%s: error occurred during put_data()\n", MOD_NAME);
-    blkdev_put(the_device, FMODE_READ | FMODE_WRITE);
     kfree(new_elem);
     kfree(buffer);
     kfree(old_metadata);
@@ -212,7 +187,6 @@ asmlinkage int sys_get_data(int offset, char *destination, size_t size){
     unsigned long not_copied;
     uint32_t target_block;
     rcu_elem *rcu_el;
-    struct block_device *the_device;
     struct super_block *sb;
     struct buffer_head *bh;
 
@@ -228,14 +202,10 @@ asmlinkage int sys_get_data(int offset, char *destination, size_t size){
     target_block = offset + NUM_METADATA_BLKS;
 
     // get a reference to the device
-    the_device = blkdev_get_by_path(the_device_name, FMODE_READ, NULL);
-    if (IS_ERR(the_device)){
-        printk("%s: blkdev_get_by_path() failed in get_data() system call\n", MOD_NAME);
-        return -1;
+    sb = the_dev_superblock;
+    if(!sb){
+        return -EINVAL;
     }
-
-    // get a reference to the superblock
-    sb = the_device->bd_super;
 
     /* 
     * RCU read-side critical section beginning:
@@ -254,7 +224,6 @@ asmlinkage int sys_get_data(int offset, char *destination, size_t size){
     // if no block has been found, return -ENODATA: the requested block does not contain valid data
     if(&(rcu_el->node) == &valid_blk_list){
         rcu_read_unlock();
-        blkdev_put(the_device, FMODE_READ);
         printk("%s: get_data() - no valid block with offset %d\n", MOD_NAME, offset);
         return -ENODATA;
     }
@@ -262,7 +231,6 @@ asmlinkage int sys_get_data(int offset, char *destination, size_t size){
     bh = sb_bread(sb, target_block);
     if(!bh){
         rcu_read_unlock();
-        blkdev_put(the_device, FMODE_READ);
         return -1;
     }
 
@@ -278,7 +246,6 @@ asmlinkage int sys_get_data(int offset, char *destination, size_t size){
     * on the device could happen (a waiting writer wants to invalidate the block). 
     */
     rcu_read_unlock();
-    blkdev_put(the_device, FMODE_READ);
     return (bytes_to_copy - not_copied);
 }
 
@@ -294,7 +261,6 @@ asmlinkage int sys_invalidate_data(int offset){
 #endif
     uint32_t target_block;
     rcu_elem *rcu_el;
-    struct block_device *the_device;
     struct super_block *sb;
     struct buffer_head *bh;
 
@@ -309,15 +275,8 @@ asmlinkage int sys_invalidate_data(int offset){
 
     target_block = offset + NUM_METADATA_BLKS;
 
-    // get a reference to the device
-    the_device = blkdev_get_by_path(the_device_name, FMODE_WRITE | FMODE_READ, NULL);
-    if (IS_ERR(the_device)){
-        printk("%s: blkdev_get_by_path() failed in get_data() system call\n", MOD_NAME);
-        return -1;
-    }
-
     // get a reference to the superblock
-    sb = the_device->bd_super;
+    sb = the_dev_superblock;
 
     /*
     * BEGINNING OF CRITICAL SECTION (RCU write-side)
@@ -334,7 +293,6 @@ asmlinkage int sys_invalidate_data(int offset){
     if(&(rcu_el->node) == &valid_blk_list){
         // no need for rcu synchronization, since no RCU changes have been made
         spin_unlock(&rcu_write_lock);
-        blkdev_put(the_device, FMODE_WRITE | FMODE_READ);
         printk("%s: invalidate_data() - no valid block with offset %d\n", MOD_NAME, offset);
         return -ENODATA;
     }
@@ -344,7 +302,6 @@ asmlinkage int sys_invalidate_data(int offset){
     if(!bh){
         // no need for rcu synchronization, since no RCU changes have been made
         spin_unlock(&rcu_write_lock);
-        blkdev_put(the_device, FMODE_WRITE | FMODE_READ);
         return -1;
     }
     
@@ -370,7 +327,6 @@ asmlinkage int sys_invalidate_data(int offset){
 
     // free the rcu elem struct
     kfree(rcu_el);
-    blkdev_put(the_device, FMODE_READ | FMODE_WRITE);
     printk("%s: invalidate_data() called with offset %d and executed correclty\n", MOD_NAME, offset);
     // return 0 on success
     return 0;

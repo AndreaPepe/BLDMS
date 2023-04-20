@@ -107,7 +107,7 @@ int main(int argc, char **argv){
     char *string17 = "This is test message number 17 and should be the last to be written ;)\n";
     char *string22 = "This is test message number 22 :)\n";
     for (i=0; i<num_data_blocks; i++){
-
+#ifdef FILL_DEV
         if (i==0 || i==5 || i==9 || i==17 || i==22){
             char *s;
             switch(i){
@@ -176,6 +176,7 @@ int main(int argc, char **argv){
             }
             continue;
         }
+#endif
         // write timestamp + valid_bytes + is_valid
         ret = write(fd, block_padding, sizeof(uint32_t) + sizeof(long) + sizeof(unsigned char));
         if (ret != sizeof(uint32_t) + sizeof(long) + sizeof(unsigned char)){

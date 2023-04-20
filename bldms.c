@@ -16,87 +16,8 @@
 unsigned char bldms_mounted = 0;
 bldms_block **metadata_array;
 size_t md_array_size;
-char *the_device_name = NULL;
 uint32_t last_written_block = 0;
-
-/**
- * @brief  Returns 0 if they are equal, > 0 if lts is after rts, < 0 otherwise.
- */
-static inline long ktime_comp(ktime_t lkt, ktime_t rkt){
-    return lkt - rkt;
-}
-
-void merge(bldms_block **arr, int l, int m, int r)
-{
-    int i, j, k;
-    int n1 = m - l + 1;
-    int n2 = r - m;
-    long comparison;
- 
-    /* create temp arrays */
-    bldms_block **L, **R;
-    L = kzalloc(sizeof(bldms_block *) * n1, GFP_KERNEL);
-    R = kzalloc(sizeof(bldms_block *) * n2, GFP_KERNEL);
-    /* Copy data to temp arrays L[] and R[] */
-    for (i = 0; i < n1; i++)
-        L[i] = arr[l + i];
-    for (j = 0; j < n2; j++)
-        R[j] = arr[m + 1 + j];
- 
-    /* Merge the temp arrays back into arr[l..r]*/
-    i = 0; // Initial index of first subarray
-    j = 0; // Initial index of second subarray
-    k = l; // Initial index of merged subarray
-    while (i < n1 && j < n2) {
-        //comparison = timespec64_comp(L[i]->ts, R[j]->ts);
-        comparison = ktime_comp(L[i]->nsec, R[j]->nsec);
-        if (comparison < 0 ) {
-            // left timestamp is before right timestamp
-            arr[k] = L[i];
-            i++;
-        }
-        else{
-            arr[k] = R[j];
-            j++;
-        }
-        k++;
-    }
- 
-    /* Copy the remaining elements of L[], if there
-    are any */
-    while (i < n1) {
-        arr[k] = L[i];
-        i++;
-        k++;
-    }
- 
-    /* Copy the remaining elements of R[], if there
-    are any */
-    while (j < n2) {
-        arr[k] = R[j];
-        j++;
-        k++;
-    }
-    kfree(L);
-    kfree(R);
-}
- 
-/* l is for left index and r is right index of the
-sub-array of arr to be sorted */
-void merge_sort(bldms_block **arr, int l, int r)
-{
-    if (l < r) {
-        // Same as (l+r)/2, but avoids overflow for
-        // large l and h
-        int m = l + (r - l) / 2;
- 
-        // Sort first and second halves
-        merge_sort(arr, l, m);
-        merge_sort(arr, m + 1, r);
- 
-        merge(arr, l, m, r);
-    }
-}
+struct super_block *the_dev_superblock;
 
 static struct super_operations bldms_fs_super_ops = {
 };
@@ -113,9 +34,7 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
     struct bldms_sb_info *sb_info;
     uint64_t magic;
     struct timespec64 curr_time;
-    bldms_block **tmp_array;
-    int i, last_valid_block, ret;
-    int *valid_indexes;
+    int i, ret;
     rcu_elem *rcu_el;
 
     // assign the magic number that identifies the FS
@@ -203,7 +122,7 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
     md_array_size = the_file_inode->file_size / DEFAULT_BLOCK_SIZE;
     brelse(bh);
 
-    pr_info("%s: the device has %lu blocks\n", MOD_NAME, md_array_size);
+    printk("%s: the device has %lu blocks\n", MOD_NAME, md_array_size);
 
     // this is a temp array used to order blocks by ascending timestamp, in order to place them in order in the RCU list
     if(sizeof(bldms_block *) * md_array_size > 1024 * PAGE_SIZE){
@@ -212,35 +131,13 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
         if(!metadata_array){
             return -EINVAL;
         }
-        // tmp_array = vcalloc(sizeof(bldms_block *), md_array_size);
-        // if(!tmp_array){
-        //     vfree(metadata_array);
-        //     return -EINVAL;
-        // }
-        // valid_indexes = vcalloc(sizeof(int), md_array_size);
-        // if(!valid_indexes){
-        //     vfree(tmp_array);
-        //     vfree(metadata_array);
-        //     return -EINVAL;
-        // }
     }else{
         metadata_array = kzalloc(sizeof(bldms_block *) * md_array_size, GFP_KERNEL);
         if(!metadata_array){
             return -EINVAL;
         }
-        // tmp_array = kzalloc(sizeof(bldms_block *) * md_array_size, GFP_KERNEL);
-        // if(!tmp_array){
-        //     kfree(metadata_array);
-        //     return -EINVAL;
-        // }
-        // valid_indexes = kzalloc(sizeof(int) * md_array_size, GFP_KERNEL);
-        // if(!valid_indexes){
-        //     kfree(tmp_array);
-        //     kfree(metadata_array);
-        //     return -EINVAL;
-        // }
     }
-    pr_info("%s: metadata array allocated\n", MOD_NAME);
+
     rcu_init();
     for (i = 0; i < md_array_size; i++){
         bh = sb_bread(sb, i + NUM_METADATA_BLKS);
@@ -266,49 +163,18 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
                 ret = -ENOMEM;
                 goto err_and_clean_rcu;
             }
+            /*
+            * Initialize the RCU list of valid blocks, by pushing in order the blocks
+            * already present and valid found on the device.
+            * The RCU list will always be kept in timestamp order. 
+            */
             add_valid_block_in_order_secure(rcu_el, i, metadata_array[i]->valid_bytes, metadata_array[i]->nsec);
-            rcu_read_unlock();
-            synchronize_rcu();
-            // insert the metadata block also in the temp array and keep track of the number of valid blocks
-            // tmp_array[nr_valid_blocks] = metadata_array[i];
-            // valid_indexes[nr_valid_blocks] = i;
-            // nr_valid_blocks++;
         }
     }
 
-    list_for_each_entry(rcu_el, &valid_blk_list, node){
-        printk("%s: RCU elem with index %d is present\n", MOD_NAME, rcu_el->ndx);
-    }
-
-    //sort the array of valid blocks comparing timestamps
-    // merge_sort(tmp_array, 0 , nr_valid_blocks - 1);
-
-    /*
-    * Initialize the RCU list of valid blocks, by pushing in order the blocks
-    * already present and valid found on the device.
-    * The RCU list will always be kept in timestamp order, since new additions
-    * will happen only on write operations with a timestamp greater of the timestamps
-    * of the previous valid blocks: so, push to the tail of the RCU list is enough. 
-    */
-    // rcu_init();
-    // for(i=0; i<nr_valid_blocks; i++){
-    //     printk("%s: adding block with index %d and ts %lld to the RCU list", MOD_NAME, valid_indexes[i], tmp_array[i]->nsec);
-    //     ret = add_valid_block(valid_indexes[i], tmp_array[i]->valid_bytes, tmp_array[i]->nsec);
-    //     if (ret < 0){
-    //         goto err_and_clean_rcu;
-    //     }
-    // }
-
-    // the number of the last valid block is saved to be used as a reference for finding the next block to be written
     
-    last_written_block = (list_empty(&valid_blk_list)) ? list_last_entry(&valid_blk_list, rcu_elem, node)->ndx : 0;
-    // if(sizeof(bldms_block *) * md_array_size > 1024 * PAGE_SIZE){
-    //     vfree(tmp_array);
-    //     vfree(valid_indexes);
-    // }else{
-    //     kfree(tmp_array);
-    //     kfree(valid_indexes);
-    // }
+    // the number of the last valid block is saved to be used as a reference for finding the next block to be written
+    last_written_block = (!list_empty(&valid_blk_list)) ? (list_last_entry(&valid_blk_list, rcu_elem, node)->ndx) : (md_array_size - 1);
 
     // signal that the device (with the file system) has been mounted
     bldms_mounted = 1;
@@ -322,29 +188,20 @@ err_and_clean_rcu:
         kfree(rcu_el);
     }
 
-err_and_clean:
     for(; i >= 0; i--){
         kfree(metadata_array[i]);
     }
 
     if(sizeof(bldms_block *) * md_array_size > 1024 * PAGE_SIZE){
-        // vfree(tmp_array);
         vfree(metadata_array);
-        // vfree(valid_indexes);
     }else{
-        // kfree(tmp_array);
         kfree(metadata_array);
-        // kfree(valid_indexes);
     }
 
     return ret;
 }
 
-
-
-static void bldms_fs_kill_sb(struct super_block *sb){
-    kill_block_super(sb);
-    
+static inline void free_data_structures(void){
     // take the spinlock and release it only when all rcu elements are safely deleted from the list
     spin_lock(&rcu_write_lock);
     remove_all_entries_secure();
@@ -356,38 +213,55 @@ static void bldms_fs_kill_sb(struct super_block *sb){
         kfree(metadata_array);
     }
 
-    if(the_device_name){
-        kfree(the_device_name);
-    }
-    the_device_name = NULL;
+    the_dev_superblock = NULL;
     bldms_mounted = 0;
-    printk(KERN_INFO "%s: file system unmount successful\n", MOD_NAME);
     spin_unlock(&rcu_write_lock);
+}
+
+static void bldms_fs_kill_sb(struct super_block *sb){
+    kill_block_super(sb);
+    
+    if(the_dev_superblock)
+        blkdev_put(the_dev_superblock->s_bdev, FMODE_READ | FMODE_WRITE);
+
+    free_data_structures();
+    
+    printk(KERN_INFO "%s: file system unmounted successfully\n", MOD_NAME);
     return;
 }
 
 // Called on mount operations
 struct dentry *bldms_fs_mount(struct file_system_type *fs_type, int flags, const char *dev_name, void *data){
     struct dentry *ret;
+    struct block_device *the_device;
     if (bldms_mounted){
         printk("%s: the device is already mounted and it supports only 1 single mount at a time\n", MOD_NAME);
         return ERR_PTR(-EBUSY);
     }
 
-    the_device_name = kzalloc(strlen(dev_name) + 1, GFP_KERNEL);
-    if(!the_device_name){
-    printk("%s: unable to allocate memory for storing the device name\n", MOD_NAME);
-        return ERR_PTR(-ENOMEM);
-    }
-    
+        
     // pass custom callback function to fill the superblock
     ret = mount_bdev(fs_type, flags, dev_name, data, bldms_fs_fill_super);
     if (unlikely(IS_ERR(ret)))
         printk("%s: error mounting the file system\n", MOD_NAME);
     else{
         // save the name of the device
-        memcpy(the_device_name, dev_name, strlen(dev_name) + 1);
-        printk("%s: file system correctly mounted on from device %s\n", MOD_NAME, the_device_name);
+        the_device = blkdev_get_by_path(dev_name, FMODE_READ | FMODE_WRITE, NULL);
+        if(IS_ERR(the_device)){
+            free_data_structures();
+            printk("%s: error getting a reference to the device\n", MOD_NAME);
+            return ERR_PTR(-EINVAL);
+        }
+        if(the_device)
+            the_dev_superblock = the_device->bd_super;
+
+        if(the_dev_superblock && the_dev_superblock->s_bdev)
+            printk("%s: got superblock reference - it has magic number 0x%lx", MOD_NAME, the_dev_superblock->s_magic);
+        else{
+            printk("%s: unable to get a reference to the device superblock\n", MOD_NAME);
+            free_data_structures();
+            return ERR_PTR(-EINVAL);
+        }
     }
         
 

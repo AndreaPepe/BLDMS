@@ -16,6 +16,10 @@ all:
 	gcc bldmsmakefs.c -lrt -o bldmsmakefs
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
 
+all-not-empty-dev:
+	gcc bldmsmakefs.c -DFILL_DEV -lrt -o bldmsmakefs
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+
 clean:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
 	rm bldmsmakefs

@@ -4,13 +4,16 @@
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
+#include "include/pretty-print.h"
+#include "include/quotes.h"
 
 #define READERS 2
 #define GETTERS 4
 #define WRITERS 2
 #define INVALIDATORS 2
 #define NUM_SPAWNS (READERS + GETTERS + WRITERS + INVALIDATORS)
-#define MAX_MSG_SIZE (1 << 12)
+#define METADATA_SIZE (sizeof(signed long long) + sizeof(int) + sizeof(unsigned char))
+#define MAX_MSG_SIZE ((1 << 12) - METADATA_SIZE)
 
 long put_data_nr = 0x0;
 long get_data_nr = 0x0;
@@ -28,26 +31,9 @@ char *device_filepath;
 #define invalidate_data(offset) \
             syscall(invalidate_data_nr, offset)
 
-#define NUM_MESSAGES 4
 
-#define print_yellow() \
-        printf("\033[1;33m")
 
-#define print_blue() \
-        printf("\033[1;34m")
 
-#define print_green() \
-        printf("\033[1;32m")
-
-#define reset_color() \
-        printf("\033[1;0m")
-
-char *messages[NUM_MESSAGES] = {
-    "Veni, vidi, vici. ~ G. Cesare\n",
-    "The sun is the same in a relative way, but we are older, shorter of breath, one day closer to death\n",
-    "I'm holding out for a hero 'til the end of the light;\n\the's gonna be strong, he's gonna be fast, he's gonna be fresh from the fire.\n\t~B. Tyler (I'm Holding Out For A Hero)\n",
-    "Nun t preoccupà waglio, c' sta o' mar for, c' sta o mar for'...\n"
-};
 
 
 int main(int argc, char **argv){
@@ -67,7 +53,7 @@ int main(int argc, char **argv){
     invalidate_data_nr = atol(argv[4]);
 
     // TODO: spawn threads to do the work concurrently and wait them to finish
-    print_yellow();
+    print_color_bold(YELLOW);
     printf("Putting messages ...\n");
     reset_color();
     for(i=0; i < NUM_MESSAGES; i++){
@@ -76,14 +62,14 @@ int main(int argc, char **argv){
             printf("put_data() returned error - (%d) %s\n", errno, strerror(errno));
             return ret;
         }
-        print_blue();
+        print_color(BLUE);
         printf("[Message %d added in block %d] ", i, ret);
         reset_color();
         printf("%s", messages[i]);
         block_ids[i] = ret;
     }
 
-    print_yellow();
+    print_color_bold(YELLOW);
     printf("\n\nInvalidating some messages ...\n");
     reset_color();
     for(i = 0; i < NUM_MESSAGES; i = i+2){
@@ -95,45 +81,62 @@ int main(int argc, char **argv){
         printf("Message in block %d correctly invalidated\n", block_ids[i]);
     }
 
-    print_yellow();
+    print_color_bold(YELLOW);
     printf("\nGetting data ...\n");
     reset_color();
-    ret = get_data(0, &buffer, MAX_MSG_SIZE);
+    ret = get_data(block_ids[3], &buffer, MAX_MSG_SIZE);
     if (ret < 0){
-        printf("get_data() on block of index 0 returned error - (%d) %s\n", errno, strerror(errno));
+        printf("get_data() on block of index %d returned error - (%d) %s\n", block_ids[3], errno, strerror(errno));
         return ret;
     }
-    printf("get_data() on block index 0 read %d bytes and the following content:\n%s", ret, buffer);
+    printf("get_data() on block index %d read %d bytes and the following content:\n%s", block_ids[3], ret, buffer);
 
-    ret = get_data(76, &buffer, MAX_MSG_SIZE);
+    ret = get_data(block_ids[0], &buffer, MAX_MSG_SIZE);
     if (ret < 0){
         if(errno == ENODATA){
-            printf("get_data() on block of index 76 returned ENODATA, as expected!\n");
+            printf("get_data() on block of index %d returned ENODATA, as expected!\n", block_ids[0]);
         }else{
-            printf("get_data() on block of index 76 returned error - (%d) %s\n", errno, strerror(errno));
+            printf("get_data() on block of index %d returned error - (%d) %s\n", block_ids[0], errno, strerror(errno));
             return ret;
         }
         
     }else{
-        printf("get_data() on block index 76 read %d bytes and the following content (but it was NOT EXPECTED!):\n%s", ret, buffer);
+        printf("get_data() on block index %d read %d bytes and the following content (but it was NOT EXPECTED!):\n%s", block_ids[0], ret, buffer);
         exit(1);
     }
 
-    print_yellow();
+    print_color_bold(YELLOW);
     printf("\nReading data from the device as a file ...\n");
     reset_color();
 
     int fd = open(device_filepath, O_RDONLY);
     if(fd < 0){
+        print_color(RED);
         printf("Error: unable to open device as a file\n");
+        reset_color();
         exit(1);
     }
 
-    memset(buffer, 0, MAX_MSG_SIZE);
-    ret = read(fd, buffer, 20);
-    printf("read() has read %d bytes:\n%s", ret, buffer);
 
-    print_green();
+    memset(buffer, 0, MAX_MSG_SIZE);
+    while((ret = read(fd, buffer, MAX_MSG_SIZE)) != 0){
+        if(ret < 0){
+            print_color(RED);
+            printf("Error: read() returned with error\n");
+            reset_color();
+            exit(1);
+        }
+        print_color(MAGENTA);
+        printf("\nread() has read the following %d bytes:\n", ret);
+        reset_color();
+        printf("%s", buffer);
+        memset(buffer, 0, MAX_MSG_SIZE);
+    }
+
+
+    close(fd);
+
+    print_color(GREEN);
     printf("\nAll operations completed correctly\n\n");
     reset_color();
     return 0;
