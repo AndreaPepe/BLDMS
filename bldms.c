@@ -260,13 +260,15 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
 
         // if it's a valid block, also insert it into the initial RCU list
         if (metadata_array[i]->is_valid == BLK_VALID){
-            // pr_info("%s: Block of index %u is valid - it has timestamp %lld\n", MOD_NAME, metadata_array[i]->ndx, metadata_array[i]->nsec);
+            pr_info("%s: Block of index %u is valid - it has timestamp %lld\n", MOD_NAME, i, metadata_array[i]->nsec);
             rcu_el = kzalloc(sizeof(rcu_elem), GFP_KERNEL);
             if(!rcu_el){
                 ret = -ENOMEM;
                 goto err_and_clean_rcu;
             }
             add_valid_block_in_order_secure(rcu_el, i, metadata_array[i]->valid_bytes, metadata_array[i]->nsec);
+            rcu_read_unlock();
+            synchronize_rcu();
             // insert the metadata block also in the temp array and keep track of the number of valid blocks
             // tmp_array[nr_valid_blocks] = metadata_array[i];
             // valid_indexes[nr_valid_blocks] = i;

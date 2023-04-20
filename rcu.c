@@ -64,7 +64,6 @@ void inline add_valid_block_secure(rcu_elem *el, uint32_t ndx, uint32_t valid_by
 
 void inline add_valid_block_in_order_secure(rcu_elem *el, uint32_t ndx, uint32_t valid_bytes, ktime_t nsec){
     rcu_elem *prev;
-    struct list_head *next;
     el->ndx = ndx;
     el->valid_bytes = valid_bytes;
     el->nsec = nsec;
@@ -76,15 +75,17 @@ void inline add_valid_block_in_order_secure(rcu_elem *el, uint32_t ndx, uint32_t
         return;
     }
 
+    printk("RCU list: in order insertion in non empty list\n");
     list_for_each_entry_reverse(prev, &valid_blk_list, node){
         if (prev->nsec < el->nsec){
             // this is the first node to have a timestamp lower than the new node
             // insert the new node after this one
-            next = prev->node.next;
-            __list_add_rcu(&(el->node), &(prev->node), next);
-            break;
+            list_add_rcu(&(el->node), &(prev->node));
+            return;
         }
     }
+    // if no node is found insert at the beginning of the list
+    list_add_rcu(&(el->node), &valid_blk_list);
     return;    
 }
 
@@ -99,7 +100,6 @@ int remove_valid_block(uint32_t ndx){
             // this is the element to be removed
             list_del_rcu(&el->node);
 
-            // TODO: update metadata of the block before relasing the lock
             spin_unlock(&rcu_write_lock);
 
             // wait for the grace period and then free the removed element
@@ -113,6 +113,11 @@ int remove_valid_block(uint32_t ndx){
     return -ENODATA;
 }
 
+/*
+* This function removes all the entries from the rcu list, bit
+* it is expected to be called only after having locked a writing spinlock before.
+* The spinlock should be released after this function returned.
+*/
 void remove_all_entries_secure(void){
     rcu_elem *el;
 
@@ -127,6 +132,9 @@ void remove_all_entries_secure(void){
     }
 }
 
+/*
+* Initialize the writing spinlock associated with the RCU list
+*/
 inline void rcu_init(void){
     spin_lock_init(&rcu_write_lock);
 }

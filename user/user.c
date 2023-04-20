@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
+#include <fcntl.h>
 
 #define READERS 2
 #define GETTERS 4
@@ -29,6 +30,18 @@ char *device_filepath;
 
 #define NUM_MESSAGES 4
 
+#define print_yellow() \
+        printf("\033[1;33m")
+
+#define print_blue() \
+        printf("\033[1;34m")
+
+#define print_green() \
+        printf("\033[1;32m")
+
+#define reset_color() \
+        printf("\033[1;0m")
+
 char *messages[NUM_MESSAGES] = {
     "Veni, vidi, vici. ~ G. Cesare\n",
     "The sun is the same in a relative way, but we are older, shorter of breath, one day closer to death\n",
@@ -54,18 +67,25 @@ int main(int argc, char **argv){
     invalidate_data_nr = atol(argv[4]);
 
     // TODO: spawn threads to do the work concurrently and wait them to finish
+    print_yellow();
     printf("Putting messages ...\n");
+    reset_color();
     for(i=0; i < NUM_MESSAGES; i++){
         ret = put_data(messages[i], strlen(messages[i]) + 1);
-        printf("[Message %d] %s", i, messages[i]);
         if (ret < 0){
             printf("put_data() returned error - (%d) %s\n", errno, strerror(errno));
             return ret;
         }
+        print_blue();
+        printf("[Message %d added in block %d] ", i, ret);
+        reset_color();
+        printf("%s", messages[i]);
         block_ids[i] = ret;
     }
 
+    print_yellow();
     printf("\n\nInvalidating some messages ...\n");
+    reset_color();
     for(i = 0; i < NUM_MESSAGES; i = i+2){
         ret = invalidate_data(block_ids[i]);
         if (ret < 0){
@@ -75,7 +95,9 @@ int main(int argc, char **argv){
         printf("Message in block %d correctly invalidated\n", block_ids[i]);
     }
 
+    print_yellow();
     printf("\nGetting data ...\n");
+    reset_color();
     ret = get_data(0, &buffer, MAX_MSG_SIZE);
     if (ret < 0){
         printf("get_data() on block of index 0 returned error - (%d) %s\n", errno, strerror(errno));
@@ -94,9 +116,25 @@ int main(int argc, char **argv){
         
     }else{
         printf("get_data() on block index 76 read %d bytes and the following content (but it was NOT EXPECTED!):\n%s", ret, buffer);
-        return 1;
+        exit(1);
     }
 
-    printf("All operations completed correctly\n");
+    print_yellow();
+    printf("\nReading data from the device as a file ...\n");
+    reset_color();
+
+    int fd = open(device_filepath, O_RDONLY);
+    if(fd < 0){
+        printf("Error: unable to open device as a file\n");
+        exit(1);
+    }
+
+    memset(buffer, 0, MAX_MSG_SIZE);
+    ret = read(fd, buffer, 20);
+    printf("read() has read %d bytes:\n%s", ret, buffer);
+
+    print_green();
+    printf("\nAll operations completed correctly\n\n");
+    reset_color();
     return 0;
 }

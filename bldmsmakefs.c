@@ -108,14 +108,6 @@ int main(int argc, char **argv){
     char *string22 = "This is test message number 22 :)\n";
     for (i=0; i<num_data_blocks; i++){
 
-        // write ndx
-        ret = write(fd, &i, sizeof(uint32_t));
-        if (ret != sizeof(i)){
-            printf("Error writing device block's metadata (index)\n");
-            close(fd);
-            return -1;
-        }
-
         if (i==0 || i==5 || i==9 || i==17 || i==22){
             char *s;
             switch(i){
