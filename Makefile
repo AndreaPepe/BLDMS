@@ -3,8 +3,13 @@ the_bldms-objs += bldms.o file_ops.o dir_ops.o rcu.o syscalls.o lib/usctm.o
 
 DEVICE_TYPE := "bldms_fs"
 BLOCK_SIZE := 4096
-NBLOCKS := 1000
 NR_BLOCKS_FORMAT := 102
+
+# modify the following parameters in order to compile the module as you want
+NBLOCKS := 1000					# maximum number of manageable blocks
+SYNCHRONOUS_PUT_DATA := 1		# 1 for synhronous writes on device; 0 for writes handled by the kernel page cache writeback daemon
+
+KCPPFLAGS := '-DNBLOCKS=$(NBLOCKS) -DSYNCHRONOUS_PUT_DATA=$(SYNCHRONOUS_PUT_DATA)'
 
 SYSCALL_TABLE = $(shell cat /sys/module/the_usctm/parameters/sys_call_table_address)
 NUM_SYSCALL_TABLE_ENTRIES = $(shell cat /sys/module/the_usctm/parameters/num_entries_found)
@@ -14,14 +19,14 @@ FREE_ENTRIES = $(shell cat /sys/module/the_usctm/parameters/free_entries)
 
 all:
 	gcc bldmsmakefs.c -lrt -o bldmsmakefs
-	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+	KCPPFLAGS=$(KCPPFLAGS) make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
 
 all-not-empty-dev:
 	gcc bldmsmakefs.c -DFILL_DEV -lrt -o bldmsmakefs
-	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+	KCPPFLAGS=$(KCPPFLAGS) make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
 
 clean:
-	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+	KCPPFLAGS=$(KCPPFLAGS) make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
 	rm bldmsmakefs
 	rmdir mount
 

@@ -165,7 +165,7 @@ int main(int argc, char **argv){
     pthread_t tids[NUM_SPAWNS];
     int block_ids[NUM_MESSAGES] = {-1,}; 
     int i, ret;
-    struct stat *st;
+    struct stat st;
     char buffer[MAX_MSG_SIZE] = {0,};
 
     if(argc < 5){
@@ -188,9 +188,8 @@ int main(int argc, char **argv){
     }
 
     // compute the number of blocks of the device, given that we know the block size
-    stat(device_filepath, st);
-    //FIXME!!! Compute or take as argument the number of blocks
-    num_blocks = 100;
+    fstat(fd, &st);
+    num_blocks = st.st_size;
     printf("Device have %ld blocks\n", num_blocks);
     close(fd);
 

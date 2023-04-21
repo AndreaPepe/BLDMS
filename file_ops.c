@@ -256,7 +256,7 @@ int bldms_open(struct inode *inode, struct file *filp){
 	// increment module usage count
 	try_module_get(THIS_MODULE);
 
-	if ((filp->f_flags & O_ACCMODE) == O_RDONLY){
+	if ((filp->f_flags & O_ACCMODE) == O_RDONLY || (filp->f_flags & O_ACCMODE) == O_RDWR){
 		// initialize the I/O session private data: timestamp of the next valid block to be read; init to 0;
 		nsec = kzalloc(sizeof(ktime_t), GFP_KERNEL);
 		if(!nsec)
@@ -280,7 +280,7 @@ int bldms_release(struct inode *inode, struct file *filp){
 		return -ENODEV;
 	}
 	
-	if ((filp->f_flags & O_ACCMODE) == O_RDONLY){
+	if ((filp->f_flags & O_ACCMODE) == O_RDONLY || (filp->f_flags & O_ACCMODE) == O_RDWR){
 		if(filp->private_data){
 			kfree(filp->private_data);
 		}
@@ -290,6 +290,36 @@ int bldms_release(struct inode *inode, struct file *filp){
 	module_put(THIS_MODULE);
 	pr_info("%s: someone called a release on the device; it has been executed correctly\n", MOD_NAME);
 	return 0;
+}
+
+loff_t bldms_llseek(struct file *filp, loff_t off, int whence){
+	ktime_t *nsec, *old_nsec;
+
+	switch(whence){
+		case SEEK_SET:
+			if(off == 0 && filp->private_data != NULL){
+				nsec = kzalloc(sizeof(ktime_t), GFP_KERNEL);
+				if (!nsec){
+					printk("%s: llseek() invoked but returned error in allocation of memory\n", MOD_NAME);
+					return -ENOMEM;
+				}
+
+				//TODO: change this to an atomic exchange and mfence
+				old_nsec = filp->private_data;
+				filp->private_data = nsec;
+				kfree(filp->private_data);
+			}else{
+				printk("%s: llseek() not allowed on offset different from zero or on file not opened in read mode\n", MOD_NAME);
+				return -EINVAL;
+			} 
+			return 0;
+
+		default:
+			printk("%s: llseek() error - only SEEK_SET at the very beginning of the file is permitted\n", MOD_NAME);
+			break;
+	}
+
+	return -EINVAL;
 }
 
 // look up goes in the inode operations
@@ -302,5 +332,6 @@ const struct file_operations bldms_file_operations = {
 	.read = bldms_read,
 	.open = bldms_open,
 	.release = bldms_release,
+	.llseek = bldms_llseek,
 	//.write = onefilefs_write //please implement this function to complete the exercise
 };
