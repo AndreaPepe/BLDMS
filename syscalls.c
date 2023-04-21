@@ -29,7 +29,7 @@ asmlinkage int sys_put_data(char *source, size_t size){
 #endif  
     int i, ret;
     unsigned long copied;
-    uint32_t target_block;
+    int target_block;
     struct super_block *sb;
     struct buffer_head *bh;
 
@@ -92,6 +92,7 @@ asmlinkage int sys_put_data(char *source, size_t size){
     * is not safe and an in-order insertion is required to guarantee the ordering of the list.
     * */
 
+    old_metadata = NULL;
     // get the actual time as creation timestamp for the message
     new_metadata->nsec = ktime_get_real();
     printk("%s: creation timestamp for the message is %lld\n", MOD_NAME, new_metadata->nsec);
@@ -109,7 +110,6 @@ asmlinkage int sys_put_data(char *source, size_t size){
     spin_lock(&rcu_write_lock);
     target_block = -1;
     for(i=((last_written_block + 1) % md_array_size); i != last_written_block; i = ((i+1)% md_array_size)){
-        printk("%s: last_written_block is %d, i=%d\n", MOD_NAME, last_written_block, i);
         /*
         * The next free block to perform the valid operation is chosen 
         * in a circular buffer manner, starting from the block following the last written one.
@@ -123,6 +123,7 @@ asmlinkage int sys_put_data(char *source, size_t size){
 
     if (target_block < 0){
         // no available free blocks
+        printk("%s: put_data() unsuccessful because the device is actually full\n", MOD_NAME);
         ret = -ENOMEM;
         goto error;
     }
@@ -169,7 +170,9 @@ error:
     printk("%s: error occurred during put_data()\n", MOD_NAME);
     kfree(new_elem);
     kfree(buffer);
-    kfree(old_metadata);
+    kfree(new_metadata);
+    if(old_metadata != NULL)
+        kfree(old_metadata);
     return ret;
 }
 
@@ -366,7 +369,7 @@ int register_syscalls(void){
     unprotect_memory();
     for(i=0; i<HACKED_ENTRIES; i++){
         ((unsigned long *)the_syscall_table)[restore_entries[i]] = (unsigned long)new_sys_call_array[i];
-        printk("%s: system call %s installed with index %d\n", MOD_NAME, syscall_names[i], restore_entries[i]);
+        printk("%s: system call %s installed; it is associated with code %d\n", MOD_NAME, syscall_names[i], restore_entries[i]);
     }
     protect_memory();
 

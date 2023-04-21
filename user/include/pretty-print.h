@@ -14,6 +14,16 @@
 #define CYAN        36
 #define WHITE       37
 
+#define DEFAULT_STR "\033[0;0m"
+#define BLACK_STR "\033[1;30m"
+#define RED_STR "\033[1;31m"
+#define GREEN_STR "\033[1;32m"
+#define YELLOW_STR "\033[1;33m"
+#define BLUE_STR "\033[1;34m"
+#define MAGENTA_STR "\033[1;35m"
+#define CYAN_STR "\033[1;36m"
+#define WHITE_STR "\033[1;37m"
+
 
 #define print_color(color) \
             printf("\033[0;%dm", color)

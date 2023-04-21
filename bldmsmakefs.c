@@ -65,6 +65,7 @@ int main(int argc, char **argv){
     file_inode.inode_no = BLDMS_SINGLEFILE_INODE_NUMBER;
     // device size is the size of the image file minus the size of the superblock and of the device file inode block
     file_inode.file_size = size - (2 * DEFAULT_BLOCK_SIZE);
+    printf("Detected file size is: %ld\n", file_inode.file_size);
 
     // write the inode on the device
     ret = write(fd, (char *)&file_inode, sizeof(file_inode));

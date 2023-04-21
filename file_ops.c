@@ -231,6 +231,7 @@ struct dentry *bldms_lookup(struct inode *parent_inode, struct dentry *child_den
 		fs_specific_inode = (struct bldms_inode *) bh->b_data;
 		// setting the right size reading it from the fs specific file size
 		var_inode->i_size = fs_specific_inode->file_size;
+		printk("%s: the file seems to have %lld bytes\n", MOD_NAME, var_inode->i_size);
 		brelse(bh);
 
 		// add dentry to the hash queue and init inode
@@ -268,8 +269,8 @@ int bldms_open(struct inode *inode, struct file *filp){
 		// the lock will be required only in the specific write operations
 		pr_info("%s: the device has been opened in WRONLY mode\n", MOD_NAME);
 	}
-	
-	inode->i_size = 
+
+	inode->i_size = filp->f_inode->i_size;	
 	pr_info("%s: the device has been opened correctly\n", MOD_NAME);
 	return 0;
 }
