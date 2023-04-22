@@ -33,7 +33,7 @@ spinlock_t rcu_write_lock;
  */
 int add_valid_block(uint32_t ndx, uint32_t valid_bytes, ktime_t nsec){
     rcu_elem *el;
-    el = kzalloc(sizeof(rcu_elem), GFP_KERNEL);
+    el = kzalloc(sizeof(rcu_elem), GFP_ATOMIC);
     if (!el)
         return -ENOMEM;
 

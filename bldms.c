@@ -133,7 +133,7 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
             return -EINVAL;
         }
     }else{
-        metadata_array = kzalloc(sizeof(bldms_block *) * md_array_size, GFP_KERNEL);
+        metadata_array = kzalloc(sizeof(bldms_block *) * md_array_size, GFP_ATOMIC);
         if(!metadata_array){
             return -EINVAL;
         }
@@ -142,7 +142,7 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
     rcu_init();
     for (i = 0; i < md_array_size; i++){
         bh = sb_bread(sb, i + NUM_METADATA_BLKS);
-        metadata_array[i] = kzalloc(sizeof(bldms_block), GFP_KERNEL);
+        metadata_array[i] = kzalloc(sizeof(bldms_block), GFP_ATOMIC);
         if (!metadata_array[i]){
             i--;
             ret = -ENOMEM;
@@ -159,7 +159,7 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
         // if it's a valid block, also insert it into the initial RCU list
         if (metadata_array[i]->is_valid == BLK_VALID){
             pr_info("%s: Block of index %u is valid - it has timestamp %lld\n", MOD_NAME, i, metadata_array[i]->nsec);
-            rcu_el = kzalloc(sizeof(rcu_elem), GFP_KERNEL);
+            rcu_el = kzalloc(sizeof(rcu_elem), GFP_ATOMIC);
             if(!rcu_el){
                 ret = -ENOMEM;
                 goto err_and_clean_rcu;

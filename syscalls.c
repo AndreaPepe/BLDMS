@@ -52,7 +52,7 @@ asmlinkage int sys_put_data(char *source, size_t size){
         return -EINVAL;
     }
 
-    buffer = kzalloc(DEFAULT_BLOCK_SIZE, GFP_KERNEL);
+    buffer = kzalloc(DEFAULT_BLOCK_SIZE, GFP_ATOMIC);
     if(!buffer){
         return -EADDRNOTAVAIL;
     }
@@ -68,13 +68,13 @@ asmlinkage int sys_put_data(char *source, size_t size){
     * Make all the required allocations before the critical section, in order to make it
     * the shortest as possible with possibly non-blocking calls in it.
     */
-    new_elem = kzalloc(sizeof(rcu_elem), GFP_KERNEL);
+    new_elem = kzalloc(sizeof(rcu_elem), GFP_ATOMIC);
     if(!new_elem){
         kfree(buffer);
         return -EADDRNOTAVAIL;
     }
 
-    new_metadata = kzalloc(sizeof(bldms_block), GFP_KERNEL);
+    new_metadata = kzalloc(sizeof(bldms_block), GFP_ATOMIC);
     if(!new_metadata){
         kfree(buffer);
         kfree(new_elem);
@@ -123,7 +123,6 @@ asmlinkage int sys_put_data(char *source, size_t size){
 
     if (target_block < 0){
         // no available free blocks
-        printk("%s: put_data() unsuccessful because the device is actually full\n", MOD_NAME);
         ret = -ENOMEM;
         goto error;
     }
@@ -167,12 +166,13 @@ asmlinkage int sys_put_data(char *source, size_t size){
 error:
     spin_unlock(&rcu_write_lock);
 
-    printk("%s: error occurred during put_data()\n", MOD_NAME);
     kfree(new_elem);
     kfree(buffer);
     kfree(new_metadata);
     if(old_metadata != NULL)
         kfree(old_metadata);
+
+    printk("%s: error occurred during put_data()\n", MOD_NAME);
     return ret;
 }
 

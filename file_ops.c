@@ -136,8 +136,8 @@ set_next_blk:
 		goto end_of_msgs;
 	}
 
-	// update the session metadata
-	next_ts = kzalloc(sizeof(ktime_t), GFP_KERNEL);
+	// update the session metadata: call with GFP_ATOMIC to avoid sleeping
+	next_ts = kzalloc(sizeof(ktime_t), GFP_ATOMIC);
 	if(!next_ts){
 		rcu_read_unlock();
 		return -ENOMEM;
@@ -247,7 +247,7 @@ int bldms_open(struct inode *inode, struct file *filp){
 
 	if ((filp->f_flags & O_ACCMODE) == O_RDONLY || (filp->f_flags & O_ACCMODE) == O_RDWR){
 		// initialize the I/O session private data: timestamp of the next valid block to be read; init to 0;
-		nsec = kzalloc(sizeof(ktime_t), GFP_KERNEL);
+		nsec = kzalloc(sizeof(ktime_t), GFP_ATOMIC);
 		if(!nsec)
 			return -ENOMEM;
 		// should already be set to 0, but who knows?! :)
@@ -283,7 +283,7 @@ loff_t bldms_llseek(struct file *filp, loff_t off, int whence){
 	switch(whence){
 		case SEEK_SET:
 			if(off == 0 && filp->private_data != NULL){
-				nsec = kzalloc(sizeof(ktime_t), GFP_KERNEL);
+				nsec = kzalloc(sizeof(ktime_t), GFP_ATOMIC);
 				if (!nsec){
 					printk("%s: llseek() invoked but returned error in allocation of memory\n", MOD_NAME);
 					return -ENOMEM;
@@ -319,6 +319,5 @@ const struct file_operations bldms_file_operations = {
 	.read = bldms_read,
 	.open = bldms_open,
 	.release = bldms_release,
-	.llseek = bldms_llseek,
-	//.write = onefilefs_write //please implement this function to complete the exercise
+	.llseek = bldms_llseek
 };
