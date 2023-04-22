@@ -95,7 +95,7 @@ asmlinkage int sys_put_data(char *source, size_t size){
     old_metadata = NULL;
     // get the actual time as creation timestamp for the message
     new_metadata->nsec = ktime_get_real();
-    printk("%s: creation timestamp for the message is %lld\n", MOD_NAME, new_metadata->nsec);
+    printk("%s: put_data() - creation timestamp for the new message is %lld\n", MOD_NAME, new_metadata->nsec);
     new_metadata->is_valid = BLK_VALID;
     new_metadata->valid_bytes = size;
     // write the block metadata in the in-memory buffer
@@ -330,7 +330,7 @@ asmlinkage int sys_invalidate_data(int offset){
 
     // free the rcu elem struct
     kfree(rcu_el);
-    printk("%s: invalidate_data() called with offset %d and executed correclty\n", MOD_NAME, offset);
+    printk("%s: invalidate_data() on block %d has been executed correctly\n", MOD_NAME, offset);
     // return 0 on success
     return 0;
 }

@@ -70,12 +70,10 @@ void inline add_valid_block_in_order_secure(rcu_elem *el, uint32_t ndx, uint32_t
 
     if (list_empty(&valid_blk_list)){
         // the list is empty: just insert the node
-        printk("Empty RCU list: now adding one element\n");
         list_add_tail_rcu(&(el->node), &valid_blk_list);
         return;
     }
 
-    printk("RCU list: in order insertion in non empty list\n");
     list_for_each_entry_reverse(prev, &valid_blk_list, node){
         if (prev->nsec < el->nsec){
             // this is the first node to have a timestamp lower than the new node

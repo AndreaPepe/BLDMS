@@ -23,7 +23,7 @@ ssize_t bldms_read(struct file *filp, char __user *buf, size_t len, loff_t *off)
 	rcu_elem *rcu_el, *next_el;
 	ktime_t *next_ts, *old_session_metadata;
 
-	printk("%s: read operation called with len %ld - and offset %lld (file size is %lld)", MOD_NAME, len, *off, file_sz);
+	//printk("%s: read operation called with len %ld - and offset %lld (file size is %lld)", MOD_NAME, len, *off, file_sz);
 
 	/*
 	 * this operation is not synchronized
@@ -57,17 +57,16 @@ ssize_t bldms_read(struct file *filp, char __user *buf, size_t len, loff_t *off)
 	// compute the index of the block to be read (skipping superblocks and initial metadata blocks)
 	device_blk = *off / DEFAULT_BLOCK_SIZE;
 	block_to_read = device_blk + NUM_METADATA_BLKS;
-	printk("%s: read operation must access block %d of the device",MOD_NAME, device_blk);
+	printk("%s: read() operation must access block %d of the device",MOD_NAME, device_blk);
 
 	/* flag RCU read-side critical section beginning */
 	rcu_read_lock();
 	next_ts = (ktime_t *)filp->private_data;
-	pr_info("%s: session ts value is %lld\n", MOD_NAME, *next_ts);
 	list_for_each_entry_rcu(rcu_el, &valid_blk_list, node){
 		
 		if (rcu_el->ndx == device_blk){
 			// the block has been found in the RCU list, so it is valid
-			pr_info("%s: found valid block in RCU list with index %d\n", MOD_NAME, rcu_el->ndx);
+			pr_info("%s: read() found valid block in RCU list with index %d\n", MOD_NAME, rcu_el->ndx);
 			break;		
 		}else if (rcu_el->nsec > *next_ts){
 			/*
@@ -76,8 +75,9 @@ ssize_t bldms_read(struct file *filp, char __user *buf, size_t len, loff_t *off)
 			* of the expected one means that the searched block is not in the RCU list anymore. 
 			* So, let's read the first element of the RCU list with timestamp bigger of the expected one, if any. 
 			*/
-			pr_info("%s: else branch hit - index %d - block_to_read %u\n", MOD_NAME, rcu_el->ndx, block_to_read);
-			pr_info("%s: else branch hit - block ts %lld - session ts %lld\n", MOD_NAME, rcu_el->nsec, *next_ts);
+
+			// pr_info("%s: else branch hit - index %d - block_to_read %u\n", MOD_NAME, rcu_el->ndx, block_to_read);
+			// pr_info("%s: else branch hit - block ts %lld - session ts %lld\n", MOD_NAME, rcu_el->nsec, *next_ts);
 			device_blk = rcu_el->ndx;
 			block_to_read = device_blk + NUM_METADATA_BLKS;
 			*off = (device_blk * DEFAULT_BLOCK_SIZE) + METADATA_SIZE;
@@ -100,7 +100,6 @@ ssize_t bldms_read(struct file *filp, char __user *buf, size_t len, loff_t *off)
 
 	if (offset - METADATA_SIZE > rcu_el->valid_bytes){
 		// this block has already been read; go to the next one
-		pr_info("%s: hit here in block already read\n", MOD_NAME);
 		goto set_next_blk;
 
 	}else if (len + offset - METADATA_SIZE > rcu_el->valid_bytes){
@@ -117,32 +116,23 @@ ssize_t bldms_read(struct file *filp, char __user *buf, size_t len, loff_t *off)
 
 	// copy the block into a user space buffer
 	ret = copy_to_user(buf, bh->b_data + offset, len);
-	// FIXME: fix the offset properly
+
 	if (ret != 0 || offset + len - ret < rcu_el->valid_bytes + METADATA_SIZE){
-		pr_info("%s: block has not been read completely - copy_to_user() return value = %d\n", MOD_NAME, ret);
 		// the block content has not been read completely: no need to update session
-		//*off = (device_blk * DEFAULT_BLOCK_SIZE) + (offset + ret);
 		*off += (len - ret);
 		brelse(bh);
 		// return the number of residual bytes in the block
 		rcu_read_unlock();
-		//return ((rcu_el->valid_bytes + METADATA_SIZE) - (offset + ret));
+		pr_info("%s: block has not been read completely - copy_to_user() return value = %d\n", MOD_NAME, ret);
 		return (len - ret);
 	}
 	brelse(bh);
 	ret = (len - ret);
-	// *off = len - ret;
-	// brelse(bh);
-	
-
-	// return the number of residuals bytes 
-	// return len - ret;
 
 set_next_blk:
 	// get the next element in the RCU list (the next, in timestamp order, valid block)
 	next_el = rcu_next_elem(rcu_el);
 	if (&(next_el->node) == &valid_blk_list){
-		pr_info("%s: next_el is end of the list\n", MOD_NAME);
 		goto end_of_msgs;
 	}
 
@@ -231,7 +221,6 @@ struct dentry *bldms_lookup(struct inode *parent_inode, struct dentry *child_den
 		fs_specific_inode = (struct bldms_inode *) bh->b_data;
 		// setting the right size reading it from the fs specific file size
 		var_inode->i_size = fs_specific_inode->file_size;
-		printk("%s: the file seems to have %lld bytes\n", MOD_NAME, var_inode->i_size);
 		brelse(bh);
 
 		// add dentry to the hash queue and init inode
@@ -265,13 +254,9 @@ int bldms_open(struct inode *inode, struct file *filp){
 		*nsec = 0;
 		filp->private_data = (void *)nsec;
 		pr_info("%s: the device has been opened in RDONLY mode; session's private data initialized\n", MOD_NAME);
-	}else if ((filp->f_flags & O_ACCMODE) == O_WRONLY){
-		// the lock will be required only in the specific write operations
-		pr_info("%s: the device has been opened in WRONLY mode\n", MOD_NAME);
 	}
 
 	inode->i_size = filp->f_inode->i_size;	
-	pr_info("%s: the device has been opened correctly\n", MOD_NAME);
 	return 0;
 }
 

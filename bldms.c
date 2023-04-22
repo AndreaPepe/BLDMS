@@ -7,6 +7,7 @@
 #include <linux/timekeeping.h>
 #include <linux/string.h>
 #include <linux/blkdev.h>
+#include <linux/vmalloc.h>
 
 #include "include/bldms.h"
 #include "include/rcu.h"
@@ -263,7 +264,6 @@ struct dentry *bldms_fs_mount(struct file_system_type *fs_type, int flags, const
             return ERR_PTR(-EINVAL);
         }
     }
-        
 
     return ret;
 }
