@@ -1,4 +1,4 @@
-/*
+/**
 * 
 * This is free software; you can redistribute it and/or modify it under the
 * terms of the GNU General Public License as published by the Free Software
@@ -15,8 +15,9 @@
 * 	 pointing to sys_ni_syscall) 
 *
 * @author Francesco Quaglia
-*
-* @date November 22, 2020
+* 
+* The file has been modified by Andrea Pepe on
+* @date April 22, 2023
 */
 
 #define EXPORT_SYMTAB
@@ -117,8 +118,7 @@ int validate_page(unsigned long *addr){
 		if(
 			   ( (addr[FIRST_NI_SYSCALL] & 0x3  ) == 0 )		
 			   && (addr[FIRST_NI_SYSCALL] != 0x0 )			// not points to 0x0	
-			   && (addr[FIRST_NI_SYSCALL] > 0xffffffff00000000 )	// not points to a locatio lower than 0xffffffff00000000	
-	//&& ( (addr[FIRST_NI_SYSCALL] & START) == START ) 	
+			   && (addr[FIRST_NI_SYSCALL] > 0xffffffff00000000 )	// not points to a locatio lower than 0xffffffff00000000		
 			&&   ( addr[FIRST_NI_SYSCALL] == addr[SECOND_NI_SYSCALL] )
 			&&   ( addr[FIRST_NI_SYSCALL] == addr[THIRD_NI_SYSCALL]	 )	
 			&&   ( addr[FIRST_NI_SYSCALL] == addr[FOURTH_NI_SYSCALL] )
@@ -167,26 +167,6 @@ module_param(num_entries_found, int, 0660);
 int next_free_entry;
 int restore[MAX_FREE] = {[0 ... (MAX_FREE-1)] -1};
 
-// #define SYS_CALL_INSTALL
-
-// #ifdef SYS_CALL_INSTALL
-// #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
-// __SYSCALL_DEFINEx(2, _trial, unsigned long, A, unsigned long, B){
-// #else
-// asmlinkage long sys_trial(unsigned long A, unsigned long B){
-// #endif
-
-//         printk("%s: thread %d requests a trial sys_call with %lu and %lu as parameters\n",MODNAME,current->pid,A,B);
-
-//         return 0;
-
-// }
-
-// #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
-// static unsigned long sys_trial = (unsigned long) __x64_sys_trial;	
-// #else
-// #endif
-
 unsigned long cr0;
 
 static inline void write_cr0_forced(unsigned long val){
@@ -204,9 +184,6 @@ inline void unprotect_memory(void){
 	cr0 = read_cr0();
     write_cr0_forced(cr0 & ~X86_CR0_WP);
 }
-
-// #else
-// #endif
 
 int get_entries(int *entry_ids, int *entry_ndx, int num_acquires, unsigned long *sys_ni_sys_call){
 	int i, given;
@@ -283,31 +260,11 @@ int init_module(void) {
 	
 	num_entries_found = j;
 	next_free_entry = 0;
-
-// #ifdef SYS_CALL_INSTALL
-// 	cr0 = read_cr0();
-//         unprotect_memory();
-//         hacked_syscall_tbl[FIRST_NI_SYSCALL] = (unsigned long*)sys_trial;
-//         protect_memory();
-// 	printk("%s: a sys_call with 2 parameters has been installed as a trial on the sys_call_table at displacement %d\n",MODNAME,FIRST_NI_SYSCALL);	
-// #else
-// #endif
-
     printk("%s: module correctly mounted\n",MODNAME);
 
     return 0;
-
 }
 
 void cleanup_module(void) {
-                
-// #ifdef SYS_CALL_INSTALL
-// 	cr0 = read_cr0();
-//         unprotect_memory();
-//         hacked_syscall_tbl[FIRST_NI_SYSCALL] = (unsigned long*)hacked_ni_syscall;
-//         protect_memory();
-// #else
-// #endif
         printk("%s: shutting down\n",MODNAME);
-        
 }

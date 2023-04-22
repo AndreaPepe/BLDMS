@@ -1,22 +1,23 @@
-/*
-* 
-* This is free software; you can redistribute it and/or modify it under the
-* terms of the GNU General Public License as published by the Free Software
-* Foundation; either version 3 of the License, or (at your option) any later
-* version.
-* 
-* This module is distributed in the hope that it will be useful, but WITHOUT ANY
-* WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
-* A PARTICULAR PURPOSE. See the GNU General Public License for more details.
-* 
-* @file usctm.c 
-* @brief This is the main source for the Linux Kernel Module which implements
-* 	 the runtime discovery of the syscall table position and of free entries (those 
-* 	 pointing to sys_ni_syscall) 
-*
-* @author Francesco Quaglia
-*
-* @date November 22, 2020
+/**
+ * Copyright (C) 2023 Andrea Pepe <pepe.andmj@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
+ *
+ * @file usctm.c 
+ * @brief simple library for the interaction with the system call discoverer module
+ * @author Andrea Pepe
+ * @date April 22, 2023  
 */
 
 #define EXPORT_SYMTAB
@@ -77,7 +78,9 @@ inline void unprotect_memory(void){
     write_cr0_forced(cr0 & ~X86_CR0_WP);
 }
 
-
+/**
+ * @brief  Get indexes of free usable system call table entries to install new system calls.
+ */
 int get_entries(int *entry_ids, int *entry_ndx, int num_acquires, unsigned long *syscall_table_addr, unsigned long *sys_ni_sys_call){
 	int i, given;
 	int ids[MAX_ACQUIRES] = {[0 ... (MAX_ACQUIRES-1)] -1};
@@ -116,7 +119,9 @@ int get_entries(int *entry_ids, int *entry_ndx, int num_acquires, unsigned long 
 	return given;
 }
 
-
+/**
+ * @brief  Make system call table entries available again
+ */
 void reset_entries(int *entry_ids, int *entry_ndx, int num_resets){
 	int i;
 

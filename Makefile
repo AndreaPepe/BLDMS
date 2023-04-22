@@ -19,14 +19,14 @@ FREE_ENTRIES = $(shell cat /sys/module/the_usctm/parameters/free_entries)
 
 all:
 	gcc bldmsmakefs.c -lrt -o bldmsmakefs
-		 make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+	KCPPFLAGS=$(KCPPFLAGS) make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
 
 all-not-empty-dev:
 	gcc bldmsmakefs.c -DFILL_DEV -lrt -o bldmsmakefs
 	KCPPFLAGS=$(KCPPFLAGS) make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
 
 clean:
-	KCPPFLAGS=$(KCPPFLAGS) make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
 	rm bldmsmakefs
 	rmdir mount
 

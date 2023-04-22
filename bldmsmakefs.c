@@ -1,3 +1,27 @@
+/**
+ * Copyright (C) 2023 Andrea Pepe <pepe.andmj@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
+ *
+ * @file bldmsmakefs.c - file system formatter for the Block-Level Data Management System (BLDMS)
+ * @brief file system formatter for the Block-Level Data Management System (BLDMS).
+ *        If compiled with the FILL_DEV directive, the device is initially formatted with some valid messages
+ *        pre-installed.
+ * @author Andrea Pepe
+ * @date April 22, 2023  
+*/
+
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -30,10 +54,9 @@ int main(int argc, char **argv){
     off_t size;
     uint num_data_blocks;
     uint32_t i;
-    // bldms_block tmp_metadata;
 
     if (argc != 2){
-        printf("Usage: %s <device>\n", argv[0]);
+        printf("Usage: %s <image>\n", argv[0]);
         return -1;
     }
 
@@ -43,6 +66,7 @@ int main(int argc, char **argv){
         return -1;
     }
 
+    // get the size of the passed image file
     fstat(fd, &st);
     size = st.st_size;
 
@@ -58,6 +82,7 @@ int main(int argc, char **argv){
         close(fd);
         return ret;
     }
+
     printf("Superblock written successfully\n");
 
     // write single file inode
@@ -67,7 +92,7 @@ int main(int argc, char **argv){
     file_inode.file_size = size - (2 * DEFAULT_BLOCK_SIZE);
     printf("Detected file size is: %ld\n", file_inode.file_size);
 
-    // write the inode on the device
+    // write the inode of the device (i.e. of the single file)
     ret = write(fd, (char *)&file_inode, sizeof(file_inode));
     if (ret != sizeof(file_inode)){
         printf("The file inode was not properly written.\n");
@@ -92,21 +117,21 @@ int main(int argc, char **argv){
     // all other blocks are reserved for user datablocks but the metadata needs to be written
 
     /*
-    * Init metadata of blocks:
-    * - nsec: 64 bits (s64) timestamp value initialized to zero
-    * - valid_bytes: 32 bits initialized to zero
-    * - is_valid: 1 byte, initialized to 0 (not valid) for each block
+    * Initialize metadata of each block of the block device:
+    * - nsec: 8 bytes timestamp value, initialized to zero
+    * - valid_bytes: 4 bytes, initialized to zero
+    * - is_valid: 1 byte, initialized to 0 (not valid) for each invalid block, to 1 for the valid ones.
     * */
     num_data_blocks = file_inode.file_size / DEFAULT_BLOCK_SIZE;
     nbytes = DEFAULT_BLOCK_SIZE -sizeof(long) -sizeof(uint32_t) -sizeof(unsigned char);
 
     // initialized to zero, also used for zero values other than padding
     block_padding = calloc(nbytes, 1);
-    char *string0 = "This is the message present at the first block\n\n";
-    char *string5 = "This is test message number 5\n";
-    char *string9 = "This is test message number 9!\n";
-    char *string17 = "This is test message number 17 and should be the last to be written ;)\n";
-    char *string22 = "This is test message number 22 :)\n";
+    char *string0 = "This is the message present at the first block, but with a timestamp of 100 seconds greater than the original\n";
+    char *string5 = "Hello, I am a message present in block number 5!\n";
+    char *string9 = "This is message for block 9, with timestamp of 9 seconds greater than it should be :)\n";
+    char *string17 = "Hi there, this is message from block number 17 and my timestamp has been increased exactly of 17 seconds ;)\n";
+    char *string22 = "I'm just a normal message put in block 22, but at least by block number is palindrome :)\n";
     for (i=0; i<num_data_blocks; i++){
 #ifdef FILL_DEV
         if (i==0 || i==5 || i==9 || i==17 || i==22){
@@ -127,12 +152,13 @@ int main(int argc, char **argv){
             uint32_t valid_bytes = strlen(s) + 1;       //take into account also the string terminator character
             struct timespec ts;
             clock_gettime(CLOCK_REALTIME, &ts);
+
             // tv_nsec are the expired nsec in the second specified by tv_sec: bring all to nsec count
             signed long long nsec = ts.tv_sec*BILLION + ts.tv_nsec;
             if (i == 9 || i== 17){
-                nsec += i*10*BILLION;                   // add some random seconds to make timestamp order differ from index order
+                nsec += i*BILLION;                      // add seconds equal to the block number to make timestamp order differ from index order
             }else if (i == 0){
-                nsec += 1000*BILLION;
+                nsec += 100*BILLION;                    // add 100 seconds to the block in the first position on the device, in order to give it the biggest timestamp
             }
             unsigned char is_valid = BLK_VALID;
 

@@ -1,3 +1,33 @@
+/**
+ * Copyright (C) 2023 Andrea Pepe <pepe.andmj@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
+ *
+ * @file bldms.c
+ * 
+ * @brief Block-Level Data Management Service (BLDMS) for Linux module.
+ * This specific file contains the module initialization and cleanup function
+ * for the registration of a single-file file system and the driver for the block
+ * device represented by the single file. The driver is partially made of VFS-operations
+ * and partially of system calls. The installation of the system calls on free-entries
+ * of the system call table is done relying on the USCTM module for the discovery of the 
+ * system call table position.
+ * 
+ * @author Andrea Pepe
+ * @date April 22, 2023  
+*/
+
 #include <linux/module.h>
 #include <linux/printk.h>
 #include <linux/fs.h>
@@ -13,12 +43,13 @@
 #include "include/rcu.h"
 #include "include/syscalls.h"
 
-
+/* Declaration of global variables for the device management */
 unsigned char bldms_mounted = 0;
 bldms_block **metadata_array;
 size_t md_array_size;
 uint32_t last_written_block = 0;
 struct super_block *the_dev_superblock;
+
 
 static struct super_operations bldms_fs_super_ops = {
 };
@@ -57,7 +88,7 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
         return -EBADF;
     }
 
-    // file-system specific data
+    // set file-system specific info and operations
     sb->s_fs_info = NULL;
     sb->s_op = &bldms_fs_super_ops;
 
@@ -76,7 +107,7 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
 
     root_inode->i_sb = sb;
 
-    // setup inode and file ops
+    // setup root inode and file ops
     root_inode->i_op = &bldms_inode_ops;
     root_inode->i_fop = &bldms_dir_operations;
 
@@ -110,12 +141,14 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
     
     /*
     * Check on the maximum number of manageable blocks
-    * Since the device is actually a file, the FS-mount operation corresponds to the device-mount operation 
+    * Since the device is actually a file, the FS-mount operation corresponds to the device-mount operation,
+    * so such check is performed here. 
     * */
     the_file_inode = (struct bldms_inode *) bh->b_data;
     
     if (the_file_inode->file_size > NBLOCKS * DEFAULT_BLOCK_SIZE){
         // unamangeable block: too big
+        printk("%s: mounting error - the device has %lu blocks, while NBLOCKS is %d\n", MOD_NAME, the_file_inode->file_size / DEFAULT_BLOCK_SIZE, NBLOCKS);
         return -E2BIG;
     }
     
@@ -128,7 +161,6 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
     // this is a temp array used to order blocks by ascending timestamp, in order to place them in order in the RCU list
     if(sizeof(bldms_block *) * md_array_size > 1024 * PAGE_SIZE){
         // kzalloc can only allocate up to 4MB; if bigger, use vzalloc
-        //metadata_array = vcalloc(sizeof(bldms_block *), md_array_size);
         metadata_array = vzalloc(sizeof(bldms_block *) * md_array_size);
         if(!metadata_array){
             return -EINVAL;
@@ -140,6 +172,12 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
         }
     }
 
+    /*
+    * Initialize data structures and RCU-list for device's block mapping and management:
+    * an array of metadata for each block of the device is maintained, while in the RCU list
+    * will be placed only the actually valid blocks, i.e. containing valid messages.
+    * The RCU list is kept ordered timestamp-wise.
+    */
     rcu_init();
     for (i = 0; i < md_array_size; i++){
         bh = sb_bread(sb, i + NUM_METADATA_BLKS);
@@ -175,7 +213,7 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
     }
 
     
-    // the number of the last valid block is saved to be used as a reference for finding the next block to be written
+    // the number of the last valid block is saved to be used as a reference for finding the next free block to be written
     last_written_block = (!list_empty(&valid_blk_list)) ? (list_last_entry(&valid_blk_list, rcu_elem, node)->ndx) : (md_array_size - 1);
 
     // signal that the device (with the file system) has been mounted
@@ -203,6 +241,7 @@ err_and_clean_rcu:
     return ret;
 }
 
+
 static inline void free_data_structures(void){
     // take the spinlock and release it only when all rcu elements are safely deleted from the list
     spin_lock(&rcu_write_lock);
@@ -220,6 +259,7 @@ static inline void free_data_structures(void){
     spin_unlock(&rcu_write_lock);
 }
 
+
 static void bldms_fs_kill_sb(struct super_block *sb){
     kill_block_super(sb);
     
@@ -231,6 +271,7 @@ static void bldms_fs_kill_sb(struct super_block *sb){
     printk(KERN_INFO "%s: file system unmounted successfully\n", MOD_NAME);
     return;
 }
+
 
 // Called on mount operations
 struct dentry *bldms_fs_mount(struct file_system_type *fs_type, int flags, const char *dev_name, void *data){
@@ -247,7 +288,7 @@ struct dentry *bldms_fs_mount(struct file_system_type *fs_type, int flags, const
     if (unlikely(IS_ERR(ret)))
         printk("%s: error mounting the file system\n", MOD_NAME);
     else{
-        // save the name of the device
+        // try to save a reference to the superblock of the device, in order to allow system calls to use it
         the_device = blkdev_get_by_path(dev_name, FMODE_READ | FMODE_WRITE, NULL);
         if(IS_ERR(the_device)){
             free_data_structures();

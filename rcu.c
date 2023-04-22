@@ -1,6 +1,4 @@
 /**
- * rcu.c - rcu list management for BLDMS service
- * 
  * Copyright (C) 2023 Andrea Pepe <pepe.andmj@gmail.com>
  *
  * This program is free software; you can redistribute it and/or
@@ -15,14 +13,20 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <http://www.gnu.org/licenses/>.
+ *
+ * @file rcu.c - rcu list management for BLDMS service
+ * @brief functions for RCU list management - some of them internally perform lock operations
+ * on the writing spinlock, others expect the spinlock management to be done outside.
+ * @author Andrea Pepe
+ * @date April 22, 2023  
 */
 
 #include "include/rcu.h"
 #include <linux/slab.h>
 
 
-LIST_HEAD(valid_blk_list);
-spinlock_t rcu_write_lock;
+LIST_HEAD(valid_blk_list);                  // RCU-list of currently valid blocks of the block device
+spinlock_t rcu_write_lock;                  // spinlock used for write operations on the RCU-list, in order to synchronize concurrent writers
 
 
 
@@ -62,6 +66,12 @@ void inline add_valid_block_secure(rcu_elem *el, uint32_t ndx, uint32_t valid_by
     return;    
 }
 
+/**
+ * @brief  This function expects the lock on the write operations' spinlock to be taken before
+ *         the function is actually called. Moreover, the parameter "el" should point to a dynamically allocated
+ *         memory area, larger enough to host an rcu_elem struct. The rcu_elem will be filled with the passed argmuents
+ *         and added to the RCU-list through a timestamp-wise in-order insertion.
+ */
 void inline add_valid_block_in_order_secure(rcu_elem *el, uint32_t ndx, uint32_t valid_bytes, ktime_t nsec){
     rcu_elem *prev;
     el->ndx = ndx;
@@ -82,12 +92,16 @@ void inline add_valid_block_in_order_secure(rcu_elem *el, uint32_t ndx, uint32_t
             return;
         }
     }
-    // if no node is found insert at the beginning of the list
+    // if no node with a smaller timestamp is found, insert at the beginning of the list
     list_add_rcu(&(el->node), &valid_blk_list);
     return;    
 }
 
 
+/**
+ * @brief  Remove the node of the list with index equal to "ndx", if any. Spinlock is managed
+ *         inside the function.
+ */
 int remove_valid_block(uint32_t ndx){
     rcu_elem *el;
 
@@ -111,10 +125,11 @@ int remove_valid_block(uint32_t ndx){
     return -ENODATA;
 }
 
-/*
-* This function removes all the entries from the rcu list, bit
-* it is expected to be called only after having locked a writing spinlock before.
-* The spinlock should be released after this function returned.
+
+/**
+* @brief  This function removes all the entries from the rcu list, bit
+*         it is expected to be called only after having locked a writing spinlock before.
+*         The spinlock should be released after this function returned.
 */
 void remove_all_entries_secure(void){
     rcu_elem *el;
@@ -130,8 +145,9 @@ void remove_all_entries_secure(void){
     }
 }
 
-/*
-* Initialize the writing spinlock associated with the RCU list
+
+/**
+* @brief   Initialize the writing spinlock associated with the RCU list
 */
 inline void rcu_init(void){
     spin_lock_init(&rcu_write_lock);
