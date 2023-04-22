@@ -127,8 +127,9 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
 
     // this is a temp array used to order blocks by ascending timestamp, in order to place them in order in the RCU list
     if(sizeof(bldms_block *) * md_array_size > 1024 * PAGE_SIZE){
-        // kzalloc can only allocate up to 4MB; if bigger, use vcalloc
-        metadata_array = vcalloc(sizeof(bldms_block *), md_array_size);
+        // kzalloc can only allocate up to 4MB; if bigger, use vzalloc
+        //metadata_array = vcalloc(sizeof(bldms_block *), md_array_size);
+        metadata_array = vzalloc(sizeof(bldms_block *) * md_array_size);
         if(!metadata_array){
             return -EINVAL;
         }
