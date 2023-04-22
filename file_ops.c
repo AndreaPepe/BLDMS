@@ -303,11 +303,13 @@ loff_t bldms_llseek(struct file *filp, loff_t off, int whence){
 					printk("%s: llseek() invoked but returned error in allocation of memory\n", MOD_NAME);
 					return -ENOMEM;
 				}
-
+				*nsec = 0;
 				//TODO: change this to an atomic exchange and mfence
 				old_nsec = filp->private_data;
 				filp->private_data = nsec;
-				kfree(filp->private_data);
+				filp->f_pos = 0;
+				kfree(old_nsec);
+				printk("%s: llseek() invoked - timestamp saved in the session has been reset\n", MOD_NAME);
 			}else{
 				printk("%s: llseek() not allowed on offset different from zero or on file not opened in read mode\n", MOD_NAME);
 				return -EINVAL;

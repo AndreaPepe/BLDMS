@@ -133,15 +133,17 @@ void *reader(void *arg){
     int i, ret, fd, num_loops;
     unsigned long param = pthread_self();
     char buffer[MAX_MSG_SIZE] = {0x0,};
-   
+    
+    fd = open(device_filepath, O_RDONLY);
+    if (fd < 0){
+        printf("%s[Reader %lu]:\tunable to open device as a file%s\n", RED_STR, param, DEFAULT_STR);
+        fflush(stdout);
+        return NULL;
+    }
+
     num_loops = 3;
     for(i = 0; i < num_loops; i++){
-        fd = open(device_filepath, O_RDONLY);
-        if (fd < 0){
-           printf("%s[Reader %lu]:\tunable to open device as a file%s\n", RED_STR, param, DEFAULT_STR);
-           fflush(stdout);
-           return NULL;
-        }
+        
         printf("%s[Reader %lu]:\tstart reading%s\n", CYAN_STR, param, DEFAULT_STR);
         // read all the messages from the device num_loops times
         // TODO: for now, we have to open and close the device each time, until lseek will be implemented
@@ -154,9 +156,10 @@ void *reader(void *arg){
             fflush(stdout);
             memset(buffer, 0, MAX_MSG_SIZE);
         }
-        close(fd);
+        lseek(fd, 0, SEEK_SET);
         sleep(1);
     }
+    close(fd);
     
     return NULL;   
 }
@@ -189,7 +192,7 @@ int main(int argc, char **argv){
 
     // compute the number of blocks of the device, given that we know the block size
     fstat(fd, &st);
-    num_blocks = st.st_size;
+    num_blocks = st.st_size / BLK_SIZE;
     printf("Device have %ld blocks\n", num_blocks);
     close(fd);
 
