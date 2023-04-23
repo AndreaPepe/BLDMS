@@ -7,7 +7,6 @@
 
 #define MOD_NAME "BLDMS"
 #define BLDMS_FS_NAME "bldms_fs"
-#define UNIQUE_FILE_NAME_SIZE 8
 
 #define MAGIC 0x30303030
 #define DEFAULT_BLOCK_SIZE 4096
@@ -17,17 +16,16 @@
 #endif
 
 #define SB_BLOCK_NUMBER 0
-#define FILENAME_MAX_LEN 255
+#define BLDMS_SINGLEFILE_INODE_NUMBER 1
 #define ROOT_INODE_NUMBER 2
+
+#define UNIQUE_FILE_NAME "the_file"
+#define UNIQUE_FILE_NAME_SIZE 8
+#define BLDMS_INODES_BLOCK_NUMBER 1
+#define FILENAME_MAX_LEN 255
 
 #define BLK_INVALID (0)
 #define BLK_VALID (BLK_INVALID + 1)
-#define BLK_FREE BLK_VALID
-#define BLK_NOT_FREE BLK_INVALID
-
-#define UNIQUE_FILE_NAME "the_file"
-#define BLDMS_INODES_BLOCK_NUMBER 1
-#define BLDMS_SINGLEFILE_INODE_NUMBER 1
 
 
 extern unsigned char bldms_mounted;
@@ -63,11 +61,11 @@ struct bldms_sb_info {
 };
 
 
-// file.c
+// file_ops.c
 extern const struct inode_operations bldms_inode_ops;
 extern const struct file_operations bldms_file_operations;
 
-// dir.c
+// dir_ops.c
 extern const struct file_operations bldms_dir_operations;
 #endif
 

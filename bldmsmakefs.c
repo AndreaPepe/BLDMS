@@ -43,6 +43,14 @@
 
 #define BILLION 1000000000L
 
+typedef struct __attribute__((packed)) _blk{
+    uint64_t nsec;
+    unsigned char is_valid : 1;
+    uint16_t valid_bytes : 15;
+} blk;
+
+#define BLK_MD_SIZE sizeof(blk)
+
 int main(int argc, char **argv){
     int fd, nbytes;
     ssize_t ret;
@@ -119,12 +127,17 @@ int main(int argc, char **argv){
     /*
     * Initialize metadata of each block of the block device:
     * - nsec: 8 bytes timestamp value, initialized to zero
-    * - valid_bytes: 4 bytes, initialized to zero
-    * - is_valid: 1 byte, initialized to 0 (not valid) for each invalid block, to 1 for the valid ones.
+    * - is_valid: 1 bit, initialized to 0 (not valid) for each invalid block, to 1 for the valid ones
+    * - valid_bytes: 15 bits, initialized to 0 for invalid blocks
     * */
     num_data_blocks = file_inode.file_size / DEFAULT_BLOCK_SIZE;
-    nbytes = DEFAULT_BLOCK_SIZE -sizeof(long) -sizeof(uint32_t) -sizeof(unsigned char);
+    blk my_blk = {
+        .nsec = 0,
+        .is_valid = BLK_INVALID,
+        .valid_bytes = 0
+    };
 
+    nbytes = DEFAULT_BLOCK_SIZE - BLK_MD_SIZE;
     // initialized to zero, also used for zero values other than padding
     block_padding = calloc(nbytes, 1);
     char *string0 = "This is the message present at the first block, but with a timestamp of 100 seconds greater than the original\n";
@@ -149,10 +162,10 @@ int main(int argc, char **argv){
                     s = string22; break;
             }
 
-            uint32_t valid_bytes = strlen(s) + 1;       //take into account also the string terminator character
+            uint16_t valid_bytes = strlen(s) + 1;       //take into account also the string terminator character
             struct timespec ts;
             clock_gettime(CLOCK_REALTIME, &ts);
-
+            
             // tv_nsec are the expired nsec in the second specified by tv_sec: bring all to nsec count
             signed long long nsec = ts.tv_sec*BILLION + ts.tv_nsec;
             if (i == 9 || i== 17){
@@ -160,53 +173,39 @@ int main(int argc, char **argv){
             }else if (i == 0){
                 nsec += 100*BILLION;                    // add 100 seconds to the block in the first position on the device, in order to give it the biggest timestamp
             }
-            unsigned char is_valid = BLK_VALID;
 
-            // write timestamp
-            ret = write(fd, &nsec, sizeof(long));
-            if (ret != sizeof(long)){
-                printf("Error writing device block's metadata (nsec)\n");
-                close(fd);
-                return -1;
-            }
-
-            // write valid_bytes
-            ret = write(fd, &valid_bytes, sizeof(uint32_t));
-            if (ret != sizeof(uint32_t)){
-                printf("Error writing device block's metadata (valid bytes)\n");
-                close(fd);
-                return -1;
-            }
-
-            // write validity byte
-            ret = write(fd, &is_valid, sizeof(unsigned char));
-            if (ret != sizeof(unsigned char)){
-                printf("Error writing device block's metadata (is_valid)\n");
-                close(fd);
-                return -1;
-            }
-
-            // write msg content
-            ret = write(fd, s, valid_bytes);
-            if (ret != valid_bytes){
-                printf("Error writing device block's metadata (valid bytes)\n");
-                close(fd);
-                return -1;
-            }
-
-            // write block padding: it is initialized to 0
-            ret = write(fd, block_padding, nbytes - valid_bytes);
-            if(ret != nbytes - valid_bytes){
+            my_blk.nsec = nsec;
+            my_blk.is_valid = BLK_VALID;
+            my_blk.valid_bytes = valid_bytes;
+            ret = write(fd, &my_blk, BLK_MD_SIZE);
+            if(ret != BLK_MD_SIZE){
                 printf("Error initializing device block content: ret is %ld, should have been %d\n", ret, nbytes - valid_bytes);
                 close(fd);
                 return -1;
             }
+
+            ret = write(fd, s, my_blk.valid_bytes);
+            if(ret != my_blk.valid_bytes){
+                printf("Error initializing device block content: ret is %ld, should have been %d\n", ret, nbytes - valid_bytes);
+                close(fd);
+                return -1;
+            }
+
+            ret = write(fd, block_padding, nbytes - my_blk.valid_bytes);
+            if(ret != nbytes - my_blk.valid_bytes){
+                printf("Error initializing device block padding: ret is %ld, should have been %d\n", ret, nbytes - valid_bytes);
+                close(fd);
+                return -1;
+            }
+
             continue;
         }
 #endif
-        // write timestamp + valid_bytes + is_valid
-        ret = write(fd, block_padding, sizeof(uint32_t) + sizeof(long) + sizeof(unsigned char));
-        if (ret != sizeof(uint32_t) + sizeof(long) + sizeof(unsigned char)){
+        my_blk.nsec = 0;
+        my_blk.is_valid = BLK_INVALID;
+        my_blk.valid_bytes = 0;
+        ret = write(fd, &my_blk, BLK_MD_SIZE);
+        if (ret != BLK_MD_SIZE){
             printf("Error writing device block's metadata (fields set to 0)\n");
             close(fd);
             return -1;

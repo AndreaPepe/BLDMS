@@ -148,7 +148,7 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
     
     if (the_file_inode->file_size > NBLOCKS * DEFAULT_BLOCK_SIZE){
         // unamangeable block: too big
-        printk("%s: mounting error - the device has %lu blocks, while NBLOCKS is %d\n", MOD_NAME, the_file_inode->file_size / DEFAULT_BLOCK_SIZE, NBLOCKS);
+        printk("%s: mounting error - the device has %llu blocks, while NBLOCKS is %d\n", MOD_NAME, the_file_inode->file_size / DEFAULT_BLOCK_SIZE, NBLOCKS);
         return -E2BIG;
     }
     
@@ -197,7 +197,8 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
 
         // if it's a valid block, also insert it into the initial RCU list
         if (metadata_array[i]->is_valid == BLK_VALID){
-            pr_info("%s: Block of index %u is valid - it has timestamp %lld\n", MOD_NAME, i, metadata_array[i]->nsec);
+            pr_info("%s: Block of index %u is valid - it has timestamp %lld, valid bytes %u and is_valid %d\n", MOD_NAME, i,
+                 metadata_array[i]->nsec, metadata_array[i]->valid_bytes, metadata_array[i]->is_valid);
             rcu_el = kzalloc(sizeof(rcu_elem), GFP_ATOMIC);
             if(!rcu_el){
                 ret = -ENOMEM;
@@ -295,8 +296,7 @@ struct dentry *bldms_fs_mount(struct file_system_type *fs_type, int flags, const
             printk("%s: error getting a reference to the device\n", MOD_NAME);
             return ERR_PTR(-EINVAL);
         }
-        if(the_device)
-            the_dev_superblock = the_device->bd_super;
+        the_dev_superblock = the_device->bd_super;
 
         if(the_dev_superblock && the_dev_superblock->s_bdev)
             printk("%s: got superblock reference - it has magic number 0x%lx", MOD_NAME, the_dev_superblock->s_magic);

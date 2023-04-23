@@ -1,3 +1,27 @@
+/**
+ * Copyright (C) 2023 Andrea Pepe <pepe.andmj@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
+ *
+ * @file file_ops.c
+ * @brief file operations that are part of the BLDMS device driver
+ *  
+ * @author Andrea Pepe
+ * 
+ * @date April 22, 2023  
+*/
+
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/fs.h>
@@ -13,6 +37,15 @@
 #include "include/device.h"
 #include "include/rcu.h"
 
+
+/**
+ * @brief  The read() operation should access the device content, according to the order of the
+ * delivery of data. To do so, the read finds the next valid block to be read from an RCU-list of
+ * valid blocks. The list is kept in timestamp order.
+ * Each invocation of the read() returns at most the content of a single block. The block to be read in the following 
+ * invokation, is determined in the previous one, and the expected timestamp is saved into the session.
+ * Such value is used to determine if, in the meanwhile, the block has been invalidated and so what is the right block to return.
+ */
 ssize_t bldms_read(struct file *filp, char __user *buf, size_t len, loff_t *off){
 	struct buffer_head *bh = NULL;
 	struct inode *f_inode = filp->f_inode;
@@ -23,12 +56,9 @@ ssize_t bldms_read(struct file *filp, char __user *buf, size_t len, loff_t *off)
 	rcu_elem *rcu_el, *next_el;
 	ktime_t *next_ts, *old_session_metadata;
 
-	//printk("%s: read operation called with len %ld - and offset %lld (file size is %lld)", MOD_NAME, len, *off, file_sz);
-
 	/*
 	 * this operation is not synchronized
 	 * *off can be changed concurrently
-	 * add synchronization if you need it for any reason
 	 */
 
 	// check that *off is within boundaries
@@ -57,7 +87,7 @@ ssize_t bldms_read(struct file *filp, char __user *buf, size_t len, loff_t *off)
 	// compute the index of the block to be read (skipping superblocks and initial metadata blocks)
 	device_blk = *off / DEFAULT_BLOCK_SIZE;
 	block_to_read = device_blk + NUM_METADATA_BLKS;
-	printk("%s: read() operation must access block %d of the device",MOD_NAME, device_blk);
+	printk("%s: read() operation asked for block number %d of the device",MOD_NAME, device_blk);
 
 	/* flag RCU read-side critical section beginning */
 	rcu_read_lock();
@@ -66,7 +96,6 @@ ssize_t bldms_read(struct file *filp, char __user *buf, size_t len, loff_t *off)
 		
 		if (rcu_el->ndx == device_blk){
 			// the block has been found in the RCU list, so it is valid
-			pr_info("%s: read() found valid block in RCU list with index %d\n", MOD_NAME, rcu_el->ndx);
 			break;		
 		}else if (rcu_el->nsec > *next_ts){
 			/*
@@ -75,9 +104,6 @@ ssize_t bldms_read(struct file *filp, char __user *buf, size_t len, loff_t *off)
 			* of the expected one means that the searched block is not in the RCU list anymore. 
 			* So, let's read the first element of the RCU list with timestamp bigger of the expected one, if any. 
 			*/
-
-			// pr_info("%s: else branch hit - index %d - block_to_read %u\n", MOD_NAME, rcu_el->ndx, block_to_read);
-			// pr_info("%s: else branch hit - block ts %lld - session ts %lld\n", MOD_NAME, rcu_el->nsec, *next_ts);
 			device_blk = rcu_el->ndx;
 			block_to_read = device_blk + NUM_METADATA_BLKS;
 			*off = (device_blk * DEFAULT_BLOCK_SIZE) + METADATA_SIZE;
@@ -89,7 +115,7 @@ ssize_t bldms_read(struct file *filp, char __user *buf, size_t len, loff_t *off)
 
 	// rcu_el is the element to be read
 
-	// to check if the tail of the list has been reached, we have to check if the node points to the head of the list (circular behaviour)
+	// to check if the tail of the list has been reached, we have to check if the node points to the head of the list
 	if (&(rcu_el->node) == &valid_blk_list){
 		// there is no valid node left to read
 		pr_info("%s: no more messages hit (rcu_el is end of the list)\n", MOD_NAME);
@@ -157,8 +183,8 @@ set_next_blk:
 
 	// signal the end of the RCU read-side critical section
 	rcu_read_unlock();
- 
-	// return the number of READ bytes, not the residuals
+	printk("%s: read() operation actually read block number %d of the device",MOD_NAME, device_blk);
+	// return the number of read bytes
 	return ret;
 
 end_of_msgs:
@@ -168,13 +194,16 @@ end_of_msgs:
 	* in order to make the caller finish.
 	* Signal the end of the RCU read-side critical section.
 	* */
-
 	*off = file_sz;
 	rcu_read_unlock();
 	return (ret > 0) ? ret : 0;
 }
 
 
+/**
+ * @brief  Perform the lookup only for the unique file of the file-system. Setup the
+ * inode and the dentry.
+ */
 struct dentry *bldms_lookup(struct inode *parent_inode, struct dentry *child_dentry, unsigned int flags){
 	struct bldms_inode *fs_specific_inode;
 	struct super_block *sb = parent_inode->i_sb;
@@ -204,6 +233,7 @@ struct dentry *bldms_lookup(struct inode *parent_inode, struct dentry *child_den
 		inode_init_owner(var_inode, NULL, S_IFDIR);
 #endif
 
+		// only read and write permissions allowed
 		var_inode->i_mode = S_IFREG | S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR | S_IWGRP | S_IWOTH;
         var_inode->i_fop = &bldms_file_operations;
 		var_inode->i_op = &bldms_inode_ops;	
@@ -237,6 +267,12 @@ struct dentry *bldms_lookup(struct inode *parent_inode, struct dentry *child_den
 	return NULL;
 }
 
+/**
+ * @brief  If the open is called with READ access permissions, a memory area will be allocated
+ * and a reference will be kept inside the session. Such area will be used to keep the timestamp of the next
+ * expected valid block of the device that a read operation should retrieve. It provides consistency between different
+ * calls to the read() operation. 
+ */
 int bldms_open(struct inode *inode, struct file *filp){
 	ktime_t *nsec;
 	if(!bldms_mounted){
@@ -250,7 +286,6 @@ int bldms_open(struct inode *inode, struct file *filp){
 		nsec = kzalloc(sizeof(ktime_t), GFP_ATOMIC);
 		if(!nsec)
 			return -ENOMEM;
-		// should already be set to 0, but who knows?! :)
 		*nsec = 0;
 		filp->private_data = (void *)nsec;
 		pr_info("%s: the device has been opened in RDONLY mode; session's private data initialized\n", MOD_NAME);
@@ -260,6 +295,11 @@ int bldms_open(struct inode *inode, struct file *filp){
 	return 0;
 }
 
+
+/**
+ * @brief  The release operation simply invokes the free of the memory area allocated to
+ * keep information inside the session, if the device has been opened in READ mode.
+ */
 int bldms_release(struct inode *inode, struct file *filp){
 	if(!bldms_mounted){
 		return -ENODEV;
@@ -277,8 +317,20 @@ int bldms_release(struct inode *inode, struct file *filp){
 	return 0;
 }
 
+
+/**
+ * @brief  This llseek operation has been implemented with the only purpose of giving
+ * the possibility to restart reading all the messages on the device from the beginning
+ * without the necessity of releasing the session and opening another one.
+ * This can only been called with SEEK_SET and offset 0. In such a case, the metadata maintained
+ * in the session will be reset to a state as if the file has just been opened.
+ */
 loff_t bldms_llseek(struct file *filp, loff_t off, int whence){
 	ktime_t *nsec, *old_nsec;
+
+	if(!bldms_mounted){
+		return -ENODEV;
+	}
 
 	switch(whence){
 		case SEEK_SET:
@@ -309,11 +361,13 @@ loff_t bldms_llseek(struct file *filp, loff_t off, int whence){
 	return -EINVAL;
 }
 
-// look up goes in the inode operations
+
+// assign the inode operations
 const struct inode_operations bldms_inode_ops = {
 	.lookup = bldms_lookup,
 };
 
+// assign the file operations
 const struct file_operations bldms_file_operations = {
 	.owner = THIS_MODULE,
 	.read = bldms_read,
