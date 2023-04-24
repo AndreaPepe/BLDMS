@@ -1,3 +1,37 @@
+/**
+ * Copyright (C) 2023 Andrea Pepe <pepe.andmj@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
+ *
+ * @file user_concurrency.c
+ * @brief Program for the interaction form user space with the BLDMS service.
+ * Several threads are spawn to perform different operation concurrently on the device:
+ *      - readers will access the device as a file and read its content;
+ *      - getters will access in read mode the device trying to read the content of specific blocks,
+ *        making use of the get_data() system call;
+ *      - writers will try to add new messages to the device, through the put_data() system call;
+ *      - invalidators will try to invalidate some specific block of the device, making them no more
+ *        available for read operations, but, instead, available for future write operations, through
+ *        the invokation of the invalidate_data() system call.
+ * 
+ * The program will check if some error in the driver functions happens. The output of the program is a
+ * series of logging messages of the different threads.
+ * 
+ * @author Andrea Pepe
+ * @date April 22, 2023  
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -6,16 +40,18 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <sys/stat.h>
+#include <stdint.h>
 #include "include/pretty-print.h"
 #include "include/quotes.h"
 
+// number of thread spwaned for each category: change these as you like
 #define READERS 1
 #define GETTERS 2
 #define WRITERS 1
 #define INVALIDATORS 1
 #define NUM_SPAWNS (READERS + GETTERS + WRITERS + INVALIDATORS)
 
-#define METADATA_SIZE (sizeof(signed long long) + sizeof(int) + sizeof(unsigned char))
+#define METADATA_SIZE (sizeof(signed long long) + sizeof(uint16_t))
 #define BLK_SIZE (1 << 12)
 #define MAX_MSG_SIZE (BLK_SIZE - METADATA_SIZE)
 
@@ -25,6 +61,7 @@ long invalidate_data_nr = 0x0;
 char *device_filepath;
 size_t num_blocks = 0x0;
 
+int total_errors = 0;                           // global variable to check for errors
 
 // declaration of macros for calling the system calls
 #define put_data(source, size) \
@@ -60,6 +97,7 @@ void *getter(void *arg){
                 printf("%s[Getter %lu]:%s\tget_data() on block %d returned ENODATA\n", YELLOW_STR, param, DEFAULT_STR, to_get);
             }else{
                 printf("%s[Getter %lu]:\tget_data() on block %d has returned with error%s\n", RED_STR, param, to_get, DEFAULT_STR);
+                total_errors++;
             }   
         }else{
                 printf("%s[Getter %lu]:%s\tget_data() on block %d read the following %d bytes:%s\n", YELLOW_STR, param, DEFAULT_STR, to_get, ret, buffer);
@@ -89,6 +127,7 @@ void *writer(void *arg){
                 printf("%s[Writer %lu]:%s\tput_data() returned ENOMEM\n", MAGENTA_STR, param, DEFAULT_STR);
             }else{
                 printf("%s[Writer %lu]:\tput_data() returned an error%s\n", RED_STR, param, DEFAULT_STR);
+                total_errors++;
             }   
         }else{
                 printf("%s[Writer %lu]:%s\tput_data() successful - the message has been written in block %d\n", MAGENTA_STR, param, DEFAULT_STR,ret);
@@ -116,6 +155,7 @@ void *invalidator(void *arg){
                 printf("%s[Invalidator %lu]:%s\tinvalidate_data() on block %d returned ENODATA\n", BLUE_STR, param, DEFAULT_STR, to_invalidate);
             }else{
                 printf("%s[Writer %lu]:\tinvalidate_data() on block %d returned an error%s\n", RED_STR, param, to_invalidate, DEFAULT_STR);
+                total_errors++;
             }
         }else{
             printf("%s[Invalidator %lu]:%s\tinvalidate_data() on block %d executed correctly\n", BLUE_STR, param, DEFAULT_STR, to_invalidate);
@@ -137,6 +177,7 @@ void *reader(void *arg){
     fd = open(device_filepath, O_RDONLY);
     if (fd < 0){
         printf("%s[Reader %lu]:\tunable to open device as a file%s\n", RED_STR, param, DEFAULT_STR);
+        total_errors++;
         fflush(stdout);
         return NULL;
     }
@@ -146,18 +187,19 @@ void *reader(void *arg){
         
         printf("%s[Reader %lu]:\tstart reading%s\n", CYAN_STR, param, DEFAULT_STR);
         // read all the messages from the device num_loops times
-        // TODO: for now, we have to open and close the device each time, until lseek will be implemented
         while((ret = read(fd, buffer, MAX_MSG_SIZE)) != 0){
             if(ret < 0){
                 printf("%s[Reader %lu]:\tread() returned with error%s\n", RED_STR, param, DEFAULT_STR);
+                total_errors++;
             }else{
                 printf("%s[Reader %lu]:\tread() has read the following %d bytes:%s\n%s\n", CYAN_STR, param, ret, DEFAULT_STR, buffer);
             }
             fflush(stdout);
             memset(buffer, 0, MAX_MSG_SIZE);
         }
+        // reset the session to begin reading again all messages
         lseek(fd, 0, SEEK_SET);
-        sleep(1);
+        sleep(1);       
     }
     close(fd);
     
@@ -209,12 +251,21 @@ int main(int argc, char **argv){
             pthread_create(&tids[i], NULL, reader, NULL);
     }
 
+    // wait for threads to finish their job
     for(i=0; i < NUM_SPAWNS; i++){
         pthread_join(tids[i], NULL);
     }
 
-    print_color(GREEN);
-    printf("\nProgram executed correctly!\n");
-    reset_color();
-    return 0;
+    if(total_errors == 0){
+        print_color(GREEN);
+        printf("\nProgram executed correctly!\n");
+        reset_color();
+        return 0;
+    }else{
+        print_color_bold(RED);
+        printf("\nProgram executed but encountered %d errors :(\n", total_errors);
+        reset_color();
+        return total_errors;
+    }
+    
 }

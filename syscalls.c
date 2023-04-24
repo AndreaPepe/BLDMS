@@ -53,7 +53,7 @@ __SYSCALL_DEFINEx(2, _put_data, char *, source, size_t, size){
 #else
 asmlinkage int sys_put_data(char *source, size_t size){
 #endif  
-    int i, ret;
+    int i, ret, curr_blk;
     unsigned long copied;
     int target_block;
     struct super_block *sb;
@@ -135,14 +135,15 @@ asmlinkage int sys_put_data(char *source, size_t size){
     */
     spin_lock(&rcu_write_lock);
     target_block = -1;
-    for(i=((last_written_block + 1) % md_array_size); i != last_written_block; i = ((i+1)% md_array_size)){
+    for(i = 1; i <= md_array_size; i++){
         /*
         * The next free block to perform the valid operation is chosen 
         * in a circular buffer manner, starting from the block following the last written one.
         */
-        if (metadata_array[i]->is_valid == BLK_INVALID){
+        curr_blk = (last_written_block + i) % md_array_size;
+        if (metadata_array[curr_blk]->is_valid == BLK_INVALID){
             // this is the target block
-            target_block = i;
+            target_block = curr_blk;
             break;
         }
     }
