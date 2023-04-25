@@ -17,7 +17,7 @@ typedef struct _rcu_elem {
     ktime_t nsec;
     size_t valid_bytes;
     struct list_head node;
-}rcu_elem;
+} rcu_elem;
 
 
 #define rcu_next_elem(el) \

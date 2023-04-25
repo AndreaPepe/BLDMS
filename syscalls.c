@@ -113,7 +113,7 @@ asmlinkage int sys_put_data(char *source, size_t size){
     * the size of the critical section and to avoid the introduction of blocking calls in the CS.
     * 
     * WARNING: calling ktime_get_real() here could result in an out of (timestamp) order
-    * insertion in the RCU list. (This thread could sleep after the function returned and another one, 
+    * insertion in the RCU list. (This thread could sleep after the function returned and another thread, 
     * with a bigger timestamp, could just take the writing spinlock before this one). 
     * Adding the new node to the tail of the RCU list is not safe and an in-order insertion is required
     * to guarantee the ordering of the list.
@@ -171,7 +171,7 @@ asmlinkage int sys_put_data(char *source, size_t size){
     bh->b_size = DEFAULT_BLOCK_SIZE;
     mark_buffer_dirty(bh);
 #if SYNCHRONOUS_PUT_DATA
-    // synchronously flush the changes on the block device: this is a blocking call that can enlarge the CS
+    // synchronously flush the changes on the block device: this is a blocking call that can increase the duration of the CS
     sync_dirty_buffer(bh);
 #endif
     brelse(bh);
