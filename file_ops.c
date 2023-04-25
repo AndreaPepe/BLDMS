@@ -73,8 +73,6 @@ ssize_t bldms_read(struct file *filp, char __user *buf, size_t len, loff_t *off)
 
 	// if the offset is inside the metadata part of the block, shift it
 	if (offset < METADATA_SIZE){
-		// reduce the length of the shifted bytes of the offset
-		//len -= (METADATA_SIZE - offset);
 		*off += (METADATA_SIZE - offset);
 		offset = METADATA_SIZE;
 	}

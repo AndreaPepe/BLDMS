@@ -1,3 +1,6 @@
+![linux](https://img.shields.io/badge/Linux-0700000?style=for-the-badge&logo=linux&logoColor=black)
+![C](https://img.shields.io/badge/C-0059AC?style=for-the-badge&logo=c&logoColor=white)
+
 # BLDMS: Block-Level Data Management Service
 
 ## Table of contents
@@ -6,9 +9,17 @@
     - [Device block's structure](#device-blocks-structure)
     - [Data structures used by the driver](#data-structures-used-by-the-driver)
 3. [The driver](#the-driver)
-    - [put_data()](#put_datachar-source-size_t-size)
-    - [get_data()](#get_dataint-offset-char-destination-size_t-size)
-    - [invalidate_data()](#invalidate_dataint-offset)
+    - [System calls](#system-calls)
+        - [put_data()](#put_datachar-source-size_t-size)
+        - [get_data()](#get_dataint-offset-char-destination-size_t-size)
+        - [invalidate_data()](#invalidate_dataint-offset)
+    - [File operations](#file-operations)
+        - [lookup()](#lookup)
+        - [read()](#read)
+        - [open()](#open)
+        - [release()](#release)
+        - [llseek()](#llseek)
+4. [Installation and usage](#installation-and-usage)
 
 
 ## Introduction
@@ -109,34 +120,81 @@ Making a simplified summary of what the system call does:
 2. Acquire the writing spinlock and enter the critical section;
 3. Scan the metadata array to found a free block; 
 4. Load the block in memory using the **sb_bread()** API;
-5. Modify the content of the in memory block, both data and metadata;
-6. Mark the buffer as dirty and, if the module is compiled with the **SYNCHRONOUS_PUT_DATA** directive set, synchronously flush the content of the block on the device, using the **sync_dirty_buffer()** API;
-7. Insert a new node in the RCU-list with a sorted insertion;
-8. Update the corresponding entry of the block into the metadata array and also update the value of the _last_written_block_ variable ;
-9. Release the writing spinlock and exit from the critical section;
-10. Free the old structures replaced by the new ones.
+5. Modify the content of the in memory block, both data and metadata, and mark the buffer as dirty, by invoking **mark_buffer_dirty()**;
+6. Insert a new node in the RCU-list with a sorted insertion;
+7. Update the corresponding entry of the block into the metadata array and also update the value of the _last_written_block_ variable ;
+8. Release the writing spinlock and exit from the critical section;
+9. If the module has been compiled with the **SYNCHRONOUS_PUT_DATA** directive set, synchronously flush the content of the block on the device, by invoking the **sync_dirty_buffer()** API;
+10. Free the old structures that have been replaced by the new ones.
 
 
 
 #### get_data(int offset, char *destination, size_t size)
+The *get_data()* system call scans the RCU list in order to check if the block with the requested *offset* (here "offset" is intended as the number of the block on the device) actually keeps a valid message. If an element in the RCU list is found, the index of the block is used to read the message directly from the device, using the **sb_bread()** API. The content of the message, up to *size* bytes, is delivered in the user space buffer invoking **copy_to_user()**. Scanning only the RCU list instead of the entire array of metadata, can result in better performances, expecially in cases where the device keeps a small number of messages. 
 
+It should be noticed that accessing the array of metadata, known the index of the block, would have a constant cost O(1), but, in order to guarantee correctness of operations, the reader should acquire the same spinlock used by the writers. By doing so, all the advantages in terms of concurrent access to the device introduced by the RCU list would be nullified.
+
+A summary of the operations performed by the *get_data()* is the following:
+1. Enter the RCU read-side critical section by invoking **rcu_read_lock()**;
+2. Scan the RCU list, until an element with index equal to the value of the *offset* argument is found or the list is finished;
+3. If no element is found in the list, return the ENODATA error; otherwise, read the content of the target block from the device through **sb_bread()**;
+4. Copy up to *size* bytes of the message in the user space buffer using **copy_to_user()**;
+5. Signal the end of the RCU read-side critical section, by invoking **rcu_read_unlock()**;
+6. Return the number of bytes actually copied into the user space buffer.
 
 #### invalidate_data(int offset)
+The *invalidate_data()* system call tries to logically invalidate the block at index *offset* of the device. In order to do that, a research of the target block is performed in the RCU list: if the block with such index is present, it can be invalidated, otherwise, the system call just return with the ENODATA error. Since this system call can result in a removal of an element from the RCU list, the **acquisition of the writing spinlock** is necessary and, consequently, the execution of some operations in a critical section.
+
+It's very important that the free of the memory area containing the element removed from the RCU list is performed only after a **grace period**, in order to allow readers holding a reference to the element to correctly use it, without running into errors.
+
+The operations performed by the system call are more or less the following:
+1. Acquire the writing spinlock and enter the critical section;
+2. Scan the RCU list in order to find the target block and get a reference to it, if any;
+3. If no block with the target index is found in the list, return the ENODATA error; otherwise, remove the element from the RCU list using the **list_del_rcu()** API;
+4. Update the corresponding entry of the metadata array, setting the *is_valid* field to *BLK_INVALID*; also load in memory the block and modify the metadata part of the block, signaling that it should be rewritten on disk by invoking **mark_buffer_dirty()**;
+5. Release the spinlock, exiting from the critical section;
+6. Wait for the **grace period**, by invoking the **synchronize_rcu()** API;
+7. Once the grace period ended, if the module has been compiled with the **SYNCHRONIZE_PUT_DATA** directive set, flush the content of the in-memory buffer on the device, by calling **sync_dirty_buffer()**;
+8. Finally release the memory area in which the RCU element was contained, by invoking **kfree()** and return 0 if the system call succedeed.  
 
 
-## file ops
+### File operations
+Like system calls, also file operations return the ENODEV error if the device is not mounted. 
+
+#### lookup()
+Simply performs the lookup for the single file of the file system, setting up the inode and the dentry.
+
+#### read()
+The *read* operation has to deliver the valid messages stored on the device according to the order of the delivery of data. In order to perform such operation, additional information are saved in the session data structure, using the **private_data** field of the **struct file** structure: in particular, in the session is saved the timestamp of the expected message to be read on the following call to the *read* operation. This is useful, since each invokation of the _read_ at most returns the content of a single block and so, the next block to be read can be invalidated between two consecutive _read_ invokations. 
+
+Saving the timestamp of the next expected message, allows to know if such message has been invalidated or not: since the RCU list is timestamp-wise sorted, when scanning it, if the research arrives to consider a block with timestamp larger than the expected one, it means that the expected block has been invalidated. In such case, the block with the minimum timestamp bigger than the expected one is delivered to the user, instead.
+
+So, the operations performed by the _read_ are the followings:
+1. Compute the index of the block to be read, based on the specified offset;
+2. Enter the RCU read-side critical section by invoking the **rcu_read_lock()** API;
+3. Iterate over the RCU list to find the block with the index computed before or the first block with timestamp larger of the one specified in the session;
+4. If no block is found, set the offset to the end of the file, because it means that all the valid messages have been read;
+5. Otherwise, read the target block from the device by invoking **sb_bread()** and copy up to *size* bytes of the message in the specified user space buffer, using the **copy_to_user()** API;
+6. Get the successor element of the RCU element corresponding to the read block and set its timestamp as the value stored in the session;
+7. Exit the RCU read-side critical section through **rcu_read_unlock()**;
+8. Update the offset, setting it to the beginning of the data of the block in which the next expected message is stored;
+9. Return the number of bytes actually copied into the user space buffer.
+
+#### open()
+The open checks the specified access flags and, if the specified access mode is either *O_RDWR* or *O_RDONLY*, it allocates and initialize to zero a memory area assigned to the **private_data** field of the session struct. This is used by the _read_ operation, as described above.
+It also increases the usage count of the module. 
+
+#### release()
+It performs the dual operations of the _open_: if the file was opened with _O_RDWR_ or _O_RDONLY_ access permissions, it deallocates the memory area pointed by the **private_data** field of the session, previously allocated by the _open_. It also decrement the usage count of the module. 
+
+#### llseek()
+The _llseek_ operation was not specified in the requirements, but has been implemented to permit a thread to reset the value of the next expected timestamp stored in the session, bringing it back to zero, the same value to which it is initialized upon the invokation of an _open_. This allows a thread to start reading the messages stored on the device again from the beginning, as if it previoulsy read no messages, using the same session and so without the necessity to close and re-open the file again.
+
+The _llseek_ operation is successful only if the file as been opened with read access permissions and if it is called with an offset equal to zero and with the SEEK_SET parameter. In all other cases, it fails.
 
 
-## system calls
 
-
-## data structures
-
-
-## optimizations, what is not covered, ...
-
-
-## installation and usage
+## Installation and usage
 
 
 ## user level files

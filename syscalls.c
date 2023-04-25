@@ -170,11 +170,6 @@ asmlinkage int sys_put_data(char *source, size_t size){
     memcpy(bh->b_data, buffer, DEFAULT_BLOCK_SIZE);
     bh->b_size = DEFAULT_BLOCK_SIZE;
     mark_buffer_dirty(bh);
-#if SYNCHRONOUS_PUT_DATA
-    // synchronously flush the changes on the block device: this is a blocking call that can increase the duration of the CS
-    sync_dirty_buffer(bh);
-#endif
-    brelse(bh);
 
     // add the element to the RCU list, after the block is effectively available on the device
     // to avoid wrong ordering of the RCU list, invoke the in order insertion of the node
@@ -184,6 +179,12 @@ asmlinkage int sys_put_data(char *source, size_t size){
     metadata_array[target_block] = new_metadata;
     last_written_block = target_block;
     spin_unlock(&rcu_write_lock);
+
+#if SYNCHRONOUS_PUT_DATA
+    // synchronously flush the changes on the block device: this is a blocking call that can increase the duration of the CS
+    sync_dirty_buffer(bh);
+#endif
+    brelse(bh);
 
     /* END OF CRITICAL SECTION */
     kfree(buffer);
@@ -349,14 +350,16 @@ asmlinkage int sys_invalidate_data(int offset){
     */
     list_del_rcu(&(rcu_el->node));
     metadata_array[rcu_el->ndx]->is_valid = BLK_INVALID;
-    spin_unlock(&rcu_write_lock);
-
-    // wait for grace period end
-    synchronize_rcu();
 
     // rewrite metadata on the device in order to be consistent
     memcpy(bh->b_data, metadata_array[rcu_el->ndx], METADATA_SIZE);
     mark_buffer_dirty(bh);
+
+    spin_unlock(&rcu_write_lock);
+
+    // wait for grace period end
+    synchronize_rcu();
+    
 #if SYNCHRONOUS_PUT_DATA
     sync_dirty_buffer(bh);
 #endif
