@@ -24,7 +24,6 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <pthread.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <errno.h>
@@ -60,7 +59,7 @@ int main(int argc, char **argv){
     char *msg;
 
     if(argc < 5){
-        printf("Usage:\n\t./%s <device file path> <put_data() NR> <get_data() NR> <invalidate_data() NR\n\n", argv[0]);
+        printf("Usage:\n\t./%s <device file path> <put_data() NR> <get_data() NR> <invalidate_data() NR>\n\n", argv[0]);
         exit(1);
     }
 

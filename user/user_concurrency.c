@@ -186,7 +186,7 @@ void *reader(void *arg){
     for(i = 0; i < num_loops; i++){
         
         printf("%s[Reader %lu]:\tstart reading%s\n", CYAN_STR, param, DEFAULT_STR);
-        // read all the messages from the device num_loops times
+        // read num_loops times all the valid messages of the device
         while((ret = read(fd, buffer, MAX_MSG_SIZE)) != 0){
             if(ret < 0){
                 printf("%s[Reader %lu]:\tread() returned with error%s\n", RED_STR, param, DEFAULT_STR);
@@ -214,7 +214,7 @@ int main(int argc, char **argv){
     char buffer[MAX_MSG_SIZE] = {0,};
 
     if(argc < 5){
-        printf("Usage:\n\t./%s <device file path> <put_data() NR> <get_data() NR> <invalidate_data() NR\n\n", argv[0]);
+        printf("Usage:\n\t./%s <device file path> <put_data() NR> <get_data() NR> <invalidate_data() NR>\n\n", argv[0]);
         exit(1);
     }
     printf("Initializing test program ...\n\n");
@@ -258,12 +258,12 @@ int main(int argc, char **argv){
 
     if(total_errors == 0){
         print_color(GREEN);
-        printf("\nProgram executed correctly!\n");
+        printf("\nProgram executed correctly - %d unexpected errors\n", total_errors);
         reset_color();
         return 0;
     }else{
         print_color_bold(RED);
-        printf("\nProgram executed but encountered %d errors :(\n", total_errors);
+        printf("\nProgram executed but %d unexpected errors have been reported :(\n", total_errors);
         reset_color();
         return total_errors;
     }

@@ -156,7 +156,8 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
     md_array_size = the_file_inode->file_size / DEFAULT_BLOCK_SIZE;
     brelse(bh);
 
-    printk("%s: the device has %lu blocks\n", MOD_NAME, md_array_size);
+    AUDIT
+        printk("%s: the device has %lu blocks\n", MOD_NAME, md_array_size);
 
     // this is a temp array used to order blocks by ascending timestamp, in order to place them in order in the RCU list
     if(sizeof(bldms_block *) * md_array_size > 1024 * PAGE_SIZE){
@@ -197,8 +198,10 @@ int bldms_fs_fill_super(struct super_block *sb, void *data, int silent){
 
         // if it's a valid block, also insert it into the initial RCU list
         if (metadata_array[i]->is_valid == BLK_VALID){
-            pr_info("%s: Block of index %u is valid - it has timestamp %lld, valid bytes %u and is_valid %d\n", MOD_NAME, i,
-                 metadata_array[i]->nsec, metadata_array[i]->valid_bytes, metadata_array[i]->is_valid);
+            AUDIT
+                pr_info("%s: Block of index %u is valid - it has timestamp %lld, valid bytes %u and is_valid %d\n", MOD_NAME, i,
+                    metadata_array[i]->nsec, metadata_array[i]->valid_bytes, metadata_array[i]->is_valid);
+                    
             rcu_el = kzalloc(sizeof(rcu_elem), GFP_ATOMIC);
             if(!rcu_el){
                 ret = -ENOMEM;

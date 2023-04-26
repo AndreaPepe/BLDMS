@@ -86,7 +86,7 @@ asmlinkage int sys_put_data(char *source, size_t size){
     copied = copy_from_user(buffer + METADATA_SIZE, source, size);
     if (copied != 0){
         kfree(buffer);
-        printk("%s: copy_from_user() unable to read the full message\n", MOD_NAME);
+        printk("%s: put_data() - copy_from_user() unable to read the full message\n", MOD_NAME);
         return -EMSGSIZE;
     }
 
@@ -121,7 +121,8 @@ asmlinkage int sys_put_data(char *source, size_t size){
     old_metadata = NULL;
     // get the actual time as creation timestamp for the message
     new_metadata->nsec = ktime_get_real();
-    printk("%s: put_data() - creation timestamp for the new message is %lld\n", MOD_NAME, new_metadata->nsec);
+    AUDIT
+        printk("%s: put_data() - creation timestamp for the new message is %lld\n", MOD_NAME, new_metadata->nsec);
     new_metadata->valid_bytes = size;
     new_metadata->is_valid = BLK_VALID;
     // write the block metadata in the in-memory buffer
@@ -256,7 +257,8 @@ asmlinkage int sys_get_data(int offset, char *destination, size_t size){
     // if no block has been found, return -ENODATA: the requested block does not contain valid data
     if(&(rcu_el->node) == &valid_blk_list){
         rcu_read_unlock();
-        printk("%s: get_data() - no valid block with offset %d\n", MOD_NAME, offset);
+        AUDIT
+            printk("%s: get_data() - no valid block with offset %d\n", MOD_NAME, offset);
         return -ENODATA;
     }
 
@@ -331,7 +333,8 @@ asmlinkage int sys_invalidate_data(int offset){
     if(&(rcu_el->node) == &valid_blk_list){
         // no need for rcu synchronization, since no RCU changes have been made
         spin_unlock(&rcu_write_lock);
-        printk("%s: invalidate_data() - no valid block with offset %d\n", MOD_NAME, offset);
+        AUDIT
+            printk("%s: invalidate_data() - no valid block with offset %d\n", MOD_NAME, offset);
         return -ENODATA;
     }
 
@@ -367,7 +370,8 @@ asmlinkage int sys_invalidate_data(int offset){
 
     // free the rcu elem struct
     kfree(rcu_el);
-    printk("%s: invalidate_data() on block %d has been executed correctly\n", MOD_NAME, offset);
+    AUDIT
+        printk("%s: invalidate_data() on block %d has been executed correctly\n", MOD_NAME, offset);
     // return 0 on success
     return 0;
 }

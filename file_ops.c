@@ -85,7 +85,8 @@ ssize_t bldms_read(struct file *filp, char __user *buf, size_t len, loff_t *off)
 	// compute the index of the block to be read (skipping superblocks and initial metadata blocks)
 	device_blk = *off / DEFAULT_BLOCK_SIZE;
 	block_to_read = device_blk + NUM_METADATA_BLKS;
-	printk("%s: read() operation asked for block number %d of the device",MOD_NAME, device_blk);
+	AUDIT
+		printk("%s: read() operation asked for block number %d of the device",MOD_NAME, device_blk);
 
 	/* flag RCU read-side critical section beginning */
 	rcu_read_lock();
@@ -116,7 +117,8 @@ ssize_t bldms_read(struct file *filp, char __user *buf, size_t len, loff_t *off)
 	// to check if the tail of the list has been reached, we have to check if the node points to the head of the list
 	if (&(rcu_el->node) == &valid_blk_list){
 		// there is no valid node left to read
-		pr_info("%s: no more messages hit (rcu_el is end of the list)\n", MOD_NAME);
+		AUDIT
+			pr_info("%s: read() - no more messages (rcu_el is end of the list)\n", MOD_NAME);
 		ret = 0;
 		goto end_of_msgs;
 	}
@@ -147,7 +149,8 @@ ssize_t bldms_read(struct file *filp, char __user *buf, size_t len, loff_t *off)
 		brelse(bh);
 		// return the number of residual bytes in the block
 		rcu_read_unlock();
-		pr_info("%s: block has not been read completely - copy_to_user() return value = %d\n", MOD_NAME, ret);
+		AUDIT
+			pr_info("%s: block has not been read completely - copy_to_user() return value is %d\n", MOD_NAME, ret);
 		return (len - ret);
 	}
 	brelse(bh);
@@ -181,7 +184,8 @@ set_next_blk:
 
 	// signal the end of the RCU read-side critical section
 	rcu_read_unlock();
-	printk("%s: read() operation actually read block number %d of the device",MOD_NAME, device_blk);
+	AUDIT
+		printk("%s: read() operation actually read block number %d of the device",MOD_NAME, device_blk);
 	// return the number of read bytes
 	return ret;
 
@@ -208,7 +212,8 @@ struct dentry *bldms_lookup(struct inode *parent_inode, struct dentry *child_den
 	struct buffer_head *bh = NULL;
 	struct inode *var_inode;
 
-	printk("%s: running the lookup inode-function for name %s",MOD_NAME,child_dentry->d_name.name);
+	AUDIT
+		printk("%s: running the lookup inode-function for name %s",MOD_NAME,child_dentry->d_name.name);
 
 	if(!strcmp(UNIQUE_FILE_NAME, child_dentry->d_name.name)){
 		// only for the unique file of the fs
@@ -286,7 +291,8 @@ int bldms_open(struct inode *inode, struct file *filp){
 			return -ENOMEM;
 		*nsec = 0;
 		filp->private_data = (void *)nsec;
-		pr_info("%s: the device has been opened in RDONLY mode; session's private data initialized\n", MOD_NAME);
+		AUDIT
+			pr_info("%s: the device has been opened in RDONLY mode; session's private data initialized\n", MOD_NAME);
 	}
 
 	inode->i_size = filp->f_inode->i_size;	
@@ -311,7 +317,8 @@ int bldms_release(struct inode *inode, struct file *filp){
 	
 	// decrement the module usage count
 	module_put(THIS_MODULE);
-	pr_info("%s: someone called a release on the device; it has been executed correctly\n", MOD_NAME);
+	AUDIT
+		pr_info("%s: someone called a release on the device; it has been executed correctly\n", MOD_NAME);
 	return 0;
 }
 
@@ -344,7 +351,8 @@ loff_t bldms_llseek(struct file *filp, loff_t off, int whence){
 				filp->private_data = nsec;
 				filp->f_pos = 0;
 				kfree(old_nsec);
-				printk("%s: llseek() invoked - timestamp saved in the session has been reset\n", MOD_NAME);
+				AUDIT
+					printk("%s: llseek() invoked - timestamp saved in the session has been reset\n", MOD_NAME);
 			}else{
 				printk("%s: llseek() not allowed on offset different from zero or on file not opened in read mode\n", MOD_NAME);
 				return -EINVAL;

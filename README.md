@@ -1,11 +1,13 @@
-![linux](https://img.shields.io/badge/Linux-0700000?style=for-the-badge&logo=linux&logoColor=black)
+![linux](https://img.shields.io/badge/Linux-yellow?style=for-the-badge&logo=linux&logoColor=black)
 ![C](https://img.shields.io/badge/C-0059AC?style=for-the-badge&logo=c&logoColor=white)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-green.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 # BLDMS: Block-Level Data Management Service
+*Author: Andrea Pepe (ID: 0315903)*
 
 ## Table of contents
 1. [Introduction](#introduction)
-2. [Design and structure of the project](#design-and-structure-of-the-project)
+2. [Project's design and structure](#projects-design-and-structure)
     - [Device block's structure](#device-blocks-structure)
     - [Data structures used by the driver](#data-structures-used-by-the-driver)
 3. [The driver](#the-driver)
@@ -19,8 +21,14 @@
         - [open()](#open)
         - [release()](#release)
         - [llseek()](#llseek)
-4. [Installation and usage](#installation-and-usage)
+4. [Installation](#installation)
+    - [USCTM module](#usctm-module)
+    - [Compiling the BLDMS module](#compiling-the-bldms-module)
+    - [Formatting and installation](#formatting-and-installation)
+    - [Unmount and uninstall](#unmount-and-uninstall)
 
+
+***
 
 ## Introduction
 The Block-Level Data Management Service is a project developed within the course of Advanced Operating Systems and System Security of the MS Degree in Computer Engineering of the Univeristy of Rome, Tor Vergata, during the academic year 2022/23.
@@ -28,7 +36,9 @@ The Block-Level Data Management Service is a project developed within the course
 The project consinst in the realization of a **Linux device driver** implementing block-level maintenance of user messages. The device driver is essentially based on system-calls, partially supported by the Virtual File System (VFS) and partially not.
 For further details on the project's specifications, refer to the file [REQUIREMENTS.md](./REQUIREMENTS.md).
 
-## Design and structure of the project
+***
+
+## Project's design and structure
 The block device driver is implemented in a Linux Kernel module that, when installed, registers in the kernel a new type of file-system: it is, indeed, a single-file file-system, able to host only one single file. Such file will be used as the block device for which the driver is implemented.
 
 The file-system image, in addition to the file described above, contains other 2 blocks: the file-system superblock and the inode of the file. Its structure will look as follows:
@@ -92,13 +102,14 @@ The use of an RCU list introduces several advantages:
 - it significantly improves performances and scalability in read-intensive scenarios, with respect to a pure spinlocks-regulated coordination scheme;
 - it allows readers and writers to access the list concurrently, providing correctness of operations thanks to the grace period waiting.
 
-A figurative representation of the described data structures is given by the following image:
+An image representing the described data structures is given below:
 
 ![data structures](./img/rcu%20and%20array.png)
 
+***
 
 ## The driver
-As mentioned before and as explained with several details in the reuirements of the project, the driver is partially made up of system calls and partially made up of VFS file-operations.
+As mentioned before and as explained with several details in the requirements of the project, the driver is partially made up of system calls and partially made up of VFS file-operations.
 
 ### System calls
 They are defined in the [syscalls.c](./syscalls.c) file.
@@ -190,11 +201,104 @@ It performs the dual operations of the _open_: if the file was opened with _O_RD
 #### llseek()
 The _llseek_ operation was not specified in the requirements, but has been implemented to permit a thread to reset the value of the next expected timestamp stored in the session, bringing it back to zero, the same value to which it is initialized upon the invokation of an _open_. This allows a thread to start reading the messages stored on the device again from the beginning, as if it previoulsy read no messages, using the same session and so without the necessity to close and re-open the file again.
 
-The _llseek_ operation is successful only if the file as been opened with read access permissions and if it is called with an offset equal to zero and with the SEEK_SET parameter. In all other cases, it fails.
+The _llseek_ operation is successful only if the file has been opened with read access permissions, if the offset argument is equal to zero and if the operation has been called with the SEEK_SET parameter. In all other cases, it fails.
+
+***
+
+## Installation
+### USCTM module
+As mentioned before, the BLDMS module relies on the **USCTM module** for the system call table discovery. So, before the mounting the BLDMS module, the USCTM module needs to be installed on the kernel.
+
+Going into the [usctm](./usctm/) directory of this project, there is a [**Makefile**](./usctm/Makefile) that allows to build and install the module, by running the following commands:
+```sh
+cd usctm/
+make all
+# with the necessary permissions
+make insmod
+```
+
+If all goes fine, the module will be installed and, upon installation, will discover the location of the system call table, the address of sys_ni_sys_call and at most 15 entries of the system call table that point to the sys_ni_sys_call and can be used to install other system calls. All the described values will be exported as module's parameters and can be accessed from the **sys file-system**.
+
+### Compiling the BLDMS module
+The BLDMS module can be compiled using the [**Makefile**](./Makefile) of the root directory of this project. Such Makefile can be modified to change the value of some compilation-time directives that allow to change the behaviour of the driver. As required, there will be:
+- the **NBLOCKS** directive that represents the maximum number of blocks a device can have in order for it to mount successfully;
+- the **SYNCHONOUS_PUT_DATA** directive, which can be set to 0 or 1. If equal to 1, writes to the device, wether due to _put_data()_ or _invalidate_data()_, will be reported synchronously to the device. Otherwise, the data will be flushed by the page cache writeback daemon when it is deemed appropriate to do so;
+
+In addition to these two required directives, you can control other stuff with two more directives:
+- the **DEBUG** directive can also be set either to 0 or 1; if it's 1, additional **printk()** invokation will be performed when calling driver's functions/system-calls and during the initialization of the module. Otherwise, will only be printed out the strictly necessary messages (e.g. the entries of the system call table assigned to the newly installed system calls) and error messages that signal that something went unexpectedly wrong;
+- the **NR_BLOCKS_FORMAT**, through which you can specify the size of the device to create in terms of number of blocks. This size must also take into account the superblock and the block for the inode of the single file of the file-system (so, to have a device of 100 blocks, you will have to specify 102).
+
+When compiling using the Makefile, will also be compiled a source file that allows you to format a file in the way the single-file file-system is expected to be formatted. This program ([bldmsmakefs.c](./bldmsmakefs.c)) takes as argument the filename of the file to be formatted and, accordingly to its size, formats it with the structure defined early in this document, at the beginning of the [Design and structure of the project](#design-and-structure-of-the-project) paragraph.
+
+The device can be formatted both with an empty content and with valid messages pre-inserted inside it, in such a way that the order of the indexes of the valid blocks does not necessarily reflect on the temporal order of the messages (i.e. timestamp of some messages are specially maipulated).
+This is decided at compile time, using a directive.
+
+That said, the Makefile contains two build commands:
+```sh
+# empty device
+make all
+
+# device initialized with some messages
+make all-not-empty-dev
+```
+
+### Formatting and installation
+When the module and the formatter have been compiled, you can format a file to use as the single-file file-system by executing:
+```sh
+make create-fs
+```
+The command will build a file named **image** in the current directory, will use the formatter program to correctly format it and will also create the **mount/** directory, where, by default, the file-system will be mounted later on.
+
+To install the module, you can run the following command with the necessary permissions:
+```sh
+make insmod
+```
+
+If it completes succesfully, the file-system will be registered and also the driver will be installed. The system-call table entries assigned to the system calls can be read running the **dmesg** command, as displayed in the following image:
+
+![syscall-num](./img/syscalls-num.png)
+
+Once the module is correctly installed, you can mount the file-system and, therefore, the device on the previously created **/mount** directory, by running, with the necessary permissions, the following command:
+```sh
+make mount-fs
+```
+
+If the command succeeds, the device is correctly mounted and you can start using it!
+
+### Unmount and uninstall
+To unmount the file-system and uninstall the module, you can run the following commands:
+```sh
+make umount-fs
+make rmmod
+make clean
+```
+*** 
+
+## Usage
+You can test the correctness of the driver in several ways: for example, if you compiled the source files with the **_make all-not-empty-dev_** command and your device has at least 23 blocks, you can test the _read()_ operation by simply running the **_cat_** command on the single file of the file-system. The expected output is the content of 5 valid messages and should look like this:
+
+![cat-output](./img/cat-output.png)
 
 
+Other ways to make use of the service is to run the application programs provided in the [user](./user/) folder. Such directory contains 3 C source files and a Makefile for compiling and running them, passing the expected arguments.
+You are invited to change to content of the [Makefile](./user/Makefile), in particular for what concerns the system call table entries associated with the 3 installed driver's system call: you should read such values using the **dmesg** command and accordingly put them in the Makefile.
 
-## Installation and usage
+Below is a brief description of what the different programs do:
+- [**user.c**](./user/user.c) : this program tries to add 20 messages in the device, by invoking _put_data()_; then tries to invalidate some of them by calling the _invalidate_data()_ system call. Done that, it tries to invoke the _get_data()_ on two different blocks, one of them is supposed to be valid while the other not. At the end, it opens the device as a file and reads the valid blocks one at a time, calling the _read()_ operation.
+**WARNING**: this is a very simple program which does not make any check on the number of blocks of the device and it expects that there will always be enough free blocks to add all the 20 messages. In other words, in several scenarios, this program could fail!
 
+- [**user_concurrency.c**](./user/user_concurrency.c) : this program spawns different threads that performs concurrent operations on the device, using the driver. There are 4 kinds of worker threads: **writers** invoke the _put_data()_ system call to write new messages; **getters** make use of the _get_data()_ system call to get the content of the blocks of the device; **invalidators** try to invalidate some of the device's blocks, making them available again for writers; **readers** open the device as a file and try to read multiple times the whole content of the device (only valid blocks), by means of the _read()_ system call and using the _lseek()_ system call in order to read again the messages from the beginning using the same session. If some unexpected error is detected, it will be counted and the program, at the end, will output a message telling how many of them have been detected. You can change the number of threads spawned for each category by editing the appropriate macro definitions in the source file. 
 
-## user level files
+- [**test.c**](./user/test.c) : this test program has the objective of testing the behaviour of the 3 installed system calls in some special scenarios. As first operation, the program will invalidate all the blocks of the device, making sure that it is logically empty. Then, all the blocks will be filled with valid messages, by invoking the _put_data()_ system call. Once this scenario has been reached, the program tries to insert a further message and check the the _put_data()_ system call returns error, setting **errno** to **ENOMEM**.
+Then, the _invalidate_data()_ is called on the last block of the device, in order to make it available again for new messages.
+After that, will be tested the behaviour of the _put_data()_ system call when youtry to insert a message larger than the maximum message size allowed. It is expected to return with error, setting **errno** to **E2BIG**.
+If the previous check passed, another _put_data()_ invokation is performed, but this time with a sufficiently shorter message; the system call should return the index of the device's last block, since it should be the only one available.
+Final part of the test is about the _get_data()_ system call: the first check consists of trying to read the previously written last block of the device; it should return exactly the length in bytes of the message. Then, another _invalidate_data()_ is called always on the same device's block; the _get_data()_ is invoked again, but this time is expected to fail, with **errno** set to **ENODATA**.
+
+All the described programs log messages on the standard output, and some of them are very verbose.
+
+## Notes
+The project has been tested on the following **Linux Kernel versions**:
+* v4.19.210
+* v5.4.0
+* v5.15.0

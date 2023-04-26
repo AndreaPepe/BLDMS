@@ -27,6 +27,11 @@
 #define BLK_INVALID (0)
 #define BLK_VALID (BLK_INVALID + 1)
 
+#ifndef DEBUG
+    #define DEBUG 0
+#endif
+#define AUDIT if(DEBUG)
+
 
 extern unsigned char bldms_mounted;
 extern struct super_block *the_dev_superblock;

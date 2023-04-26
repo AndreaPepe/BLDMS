@@ -7,7 +7,7 @@ INVALIDATE_DATA_NR = 174
 all:
 	gcc user.c -o user
 	gcc user_concurrency.c -lpthread -o user_concurrency
-	gcc test.c -lpthread -o test
+	gcc test.c -o test
 
 clean:
 	rm user

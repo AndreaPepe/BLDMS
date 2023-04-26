@@ -62,7 +62,7 @@ int main(int argc, char **argv){
     char buffer[MAX_MSG_SIZE] = {0,};
 
     if(argc < 5){
-        printf("Usage:\n\t./%s <device file path> <put_data() NR> <get_data() NR> <invalidate_data() NR\n\n", argv[0]);
+        printf("Usage:\n\t./%s <device file path> <put_data() NR> <get_data() NR> <invalidate_data() NR>\n\n", argv[0]);
         exit(1);
     }
 
