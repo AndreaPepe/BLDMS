@@ -16,6 +16,7 @@ cmake-build-debug
 *.order
 *.mod
 *.mod*
+image
 
 #backup files
 *~
