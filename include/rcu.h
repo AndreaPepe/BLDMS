@@ -28,6 +28,6 @@ extern int add_valid_block(uint32_t ndx, uint32_t valid_bytes, ktime_t nsec);
 extern void add_valid_block_secure(rcu_elem *el, uint32_t ndx, uint32_t valid_bytes, ktime_t nsec);
 extern void add_valid_block_in_order_secure(rcu_elem *el, uint32_t ndx, uint32_t valid_bytes, ktime_t nsec);
 extern int remove_valid_block(uint32_t ndx);
-extern void remove_all_entries_secure(void);
+extern void remove_all_entries_secure(struct list_head *tmp_list);
 extern inline void rcu_init(void);
 #endif

@@ -246,21 +246,33 @@ err_and_clean_rcu:
 }
 
 
-static inline void free_data_structures(void){
+static void free_data_structures(void){
     // take the spinlock and release it only when all rcu elements are safely deleted from the list
-    spin_lock(&rcu_write_lock);
-    remove_all_entries_secure();
     
-
-    if(sizeof(bldms_block *) * md_array_size > 1024 * PAGE_SIZE){
-        vfree(metadata_array);
-    }else{
-        kfree(metadata_array);
-    }
-
+    bldms_block **old_metadata_array;
+    rcu_elem *rcu_el;
+    struct list_head tmp_list = {&(tmp_list), &(tmp_list)};
+    
+    spin_lock(&rcu_write_lock); 
+    remove_all_entries_secure(&tmp_list);
+    old_metadata_array = metadata_array;
+    metadata_array = NULL;
+    md_array_size = 0;
     the_dev_superblock = NULL;
     bldms_mounted = 0;
     spin_unlock(&rcu_write_lock);
+
+    synchronize_rcu();
+    list_for_each_entry(rcu_el, &tmp_list, node){
+        list_del(&(rcu_el->node));
+        kfree(rcu_el);
+    }
+
+    if(sizeof(bldms_block *) * md_array_size > 1024 * PAGE_SIZE){
+        vfree(old_metadata_array);
+    }else{
+        kfree(old_metadata_array);
+    }   
 }
 
 

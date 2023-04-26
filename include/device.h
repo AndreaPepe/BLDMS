@@ -7,9 +7,9 @@
 
 // device's block metadata
 typedef struct __attribute__((packed)) bldms_block{
-    ktime_t nsec;                           // 64 bit
+    ktime_t nsec;                           // 64 bits
     unsigned char is_valid : 1;             // 1 bit
-    uint16_t valid_bytes : 15;              // 15 bit   
+    uint16_t valid_bytes : 15;              // 15 bits   
 }bldms_block;
 
 #define METADATA_SIZE sizeof(bldms_block)   // 10 bytes
