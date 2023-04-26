@@ -131,18 +131,17 @@ int remove_valid_block(uint32_t ndx){
 *         it is expected to be called only after having locked a writing spinlock before.
 *         The spinlock should be released after this function returned.
 */
-void remove_all_entries_secure(struct list_head *tmp_list){
+void remove_all_entries_secure(void){
     rcu_elem *el;
 
     // write lock should be taken outside
     list_for_each_entry(el, &valid_blk_list, node){
         // this is the element to be removed
-        list_add(&el->node, tmp_list);
         list_del_rcu(&el->node);
 
         // wait for the grace period and then free the removed element
-        // synchronize_rcu();
-        // kfree(el);
+        synchronize_rcu();
+        kfree(el);
     }
 }
 

@@ -322,6 +322,5 @@ The project has been tested on the following **Linux Kernel versions**:
 * v4.19.210
 * v5.4.0
 * v5.15.0
-* v5.19.0
 
 If you are interested in fully understanding the code structure or you want to know more details about the project, it is strongly recommended to view the source code and read the comments. 
